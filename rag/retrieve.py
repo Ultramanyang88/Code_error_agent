@@ -29,6 +29,7 @@ class RAGEngine:
         index_dir: str = ".agent_index",
         embedder: Optional[CodeEmbedder] = None,
         auto_load: bool = True,
+        use_cross_encoder: bool = True
     ):
         self.repo_root = Path(repo_root).resolve()
         self.index_dir = index_dir
@@ -42,8 +43,17 @@ class RAGEngine:
         self.index = None
         self.chunks: List[CodeChunk] = []
 
+        self._cross_encoder = None
+        if use_cross_encoder:
+            try:
+                from sentence_transformers import CrossEncoder
+                self._cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+            except Exception:
+                pass
+
         if auto_load:
             self.load_or_build()
+        
 
     def load_or_build(self, force_rebuild: bool = False) -> None:
         index_path = self.repo_root / self.index_dir / "index.faiss"
@@ -161,7 +171,29 @@ class RAGEngine:
 
         return merged
 
-    def rerank(
+    def _cross_encoder_rerank(
+        self,
+        query: str,
+        candidates: List[Dict[str, Any]],
+        top_k: int,
+    ) -> List[Dict[str, Any]]:
+    # Truncate content to avoid overwhelming the model (512 token limit)
+        pairs = [
+            (query, item.get("content", "")[:1200])
+            for item in candidates
+        ]
+        scores = self._cross_encoder.predict(pairs)  # returns numpy array
+
+        reranked = []
+        for item, score in zip(candidates, scores):
+            new_item = dict(item)
+            new_item["rerank_score"] = float(score)
+            reranked.append(new_item)
+
+        reranked.sort(key=lambda x: x["rerank_score"], reverse=True)
+        return reranked[:top_k]
+
+    def _lexical_rerank(
         self,
         query: str,
         candidates: List[Dict[str, Any]],
@@ -213,15 +245,25 @@ class RAGEngine:
 
         return reranked[:top_k]
 
+    def rerank(self, query, candidates, top_k=8):
+        if self._cross_encoder is not None:
+            return self._cross_encoder_rerank(query, candidates, top_k)
+        return self._lexical_rerank(query, candidates, top_k)
+
     def retrieve(
         self,
         query: str,
         top_k: int = 8,
         vector_top_k: int = 12,
         keyword_top_k: int = 20,
+        min_score: float = -4.0,
     ) -> List[Dict[str, Any]]:
         """
         End-to-end retrieval.
+
+        min_score: cross-encoder threshold. Results below this are dropped.
+        Cross-encoder scores: >0 = relevant, ~-3 = borderline, <-5 = not relevant.
+        Set to None to disable filtering.
         """
         candidates = self.hybrid_recall(
             query=query,
@@ -229,7 +271,18 @@ class RAGEngine:
             keyword_top_k=keyword_top_k,
         )
 
-        return self.rerank(query=query, candidates=candidates, top_k=top_k)
+        reranked = self.rerank(query=query, candidates=candidates, top_k=top_k)
+
+        if self._cross_encoder is not None and min_score is not None and reranked:
+            filtered = [r for r in reranked if r.get("rerank_score", 0.0) >= min_score]
+            if filtered:
+                return filtered
+            # All below threshold: return top-1 with a warning flag so caller can signal "weak results"
+            top = dict(reranked[0])
+            top["_low_relevance"] = True
+            return [top]
+
+        return reranked
 
     def format_context(
         self,
@@ -241,6 +294,9 @@ class RAGEngine:
         """
         if not results:
             return "No relevant context found."
+
+        if results[0].get("_low_relevance"):
+            return "No sufficiently relevant context found (best score below threshold). Use read_file or list_files to inspect the repository directly."
 
         blocks = []
 
@@ -398,11 +454,19 @@ class RAGEngine:
         bonus = 0.0
 
         important_terms = self._tokenize(query_lower)
-
         for term in important_terms:
             if term in file_lower:
                 bonus += 0.5
             if term in symbol_lower:
                 bonus += 0.5
 
-        return min(bonus, 1.0)
+        # Boost README / docs when query is about project overview
+        overview_terms = {"what", "project", "purpose", "overview", "describe", "summary", "about", "does"}
+        if any(t in overview_terms for t in important_terms):
+            file_base = file_lower.split("/")[-1]
+            if any(file_base.startswith(p) for p in ("readme", "overview", "intro", "about", "index")):
+                bonus += 1.5
+            if any(seg in file_lower for seg in ("docs/", "documentation/", "wiki/")):
+                bonus += 0.5
+
+        return min(bonus, 2.0)

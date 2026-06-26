@@ -1,0 +1,13 @@
+{
+  "task_id": "task_003_import_error",
+  "description": "Agent must remove the broken import from main.py",
+  "expected_validation": "PASSED",
+  "target_repo": "testcase/py",
+  "buggy_files": ["main.py"],
+  "judge_criteria": [
+    "Agent correctly identifies the nonexistent module import",
+    "Fix removes or corrects the broken import line",
+    "Agent uses identify_error tool on the traceback",
+    "All 5 tests pass after the fix"
+  ]
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 import json
+import os
 import requests
 
 
@@ -30,13 +31,17 @@ class LLMClient:
         temperature: float = 0.1,
         max_tokens: int = 2048,
         timeout: int = 120,
+        api_key: Optional[str] = None,
     ):
         self.base_url = base_url.rstrip("/")
+        if self.base_url.endswith("/v1"):
+            self.base_url = self.base_url[:-3]
         self.model = model
         self.provider = provider
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.timeout = timeout
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY") or ""
 
     def chat(
         self,
@@ -58,9 +63,14 @@ class LLMClient:
             "max_tokens": self.max_tokens,
         }
 
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
         response = requests.post(
             url,
             json=payload,
+            headers=headers,
             timeout=self.timeout,
         )
 

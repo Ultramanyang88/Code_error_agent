@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import json
+import time
+import uuid
+from pathlib import Path
+from typing import Optional
 
-from core.state import AgentState
+from core.state import AgentState, RunStatus, ValidationStatus
 from core.planner import Planner
 from core.executor import Executor
 from core.memory import AgentMemory
@@ -10,23 +15,50 @@ from tools.tools import get_tool_map
 from llm import create_local_llm_client
 
 
-def check_validation(state: AgentState) -> bool:
+def get_validation_status(state: AgentState) -> ValidationStatus:
     if not state.test_results:
-        return True
+        return ValidationStatus.NOT_RUN
 
-    latest_test = state.test_results[-1]
-    return latest_test.success
+    latest = state.test_results[-1]
+
+    if latest.metadata.get("timed_out"):
+        return ValidationStatus.ERROR
+
+    if latest.metadata.get("execution_error"):
+        return ValidationStatus.ERROR
+
+    if latest.success:
+        return ValidationStatus.PASSED
+
+    return ValidationStatus.FAILED
 
 
-def run_agent(task_description: str, repo_root: str, client=None):
+def run_agent(
+    task_description: str,
+    repo_root: str,
+    client=None,
+    trace_path: Optional[str] = None,
+    run_id: Optional[str] = None,
+    step_callback=None,  # callable(event_type: str, data: dict)
+) -> AgentState:
+    run_id = run_id or str(uuid.uuid4())[:8]
+    started_at = time.time()
+
     state = AgentState(
         input_query=task_description,
         repo_root=repo_root,
-        max_steps=20,
     )
+    state.started_at = started_at
 
-    memory = AgentMemory()
+    memory = AgentMemory(persist_dir=".agent_memory")
     tools = get_tool_map()
+
+    try:
+        from agent_mcp.client import MCPToolClient
+        mcp = MCPToolClient(command="npx", args=["-y", "@modelcontextprotocol/server-filesystem", "."], namespace="mcp_fs")
+        tools.update(mcp.get_tool_map())
+    except Exception as e:
+        print(f"[!] MCP tools unavailable: {e}")
 
     planner = Planner(client=client)
     executor = Executor(
@@ -37,6 +69,12 @@ def run_agent(task_description: str, repo_root: str, client=None):
 
     planner.create_initial_plan(state)
 
+    if step_callback:
+        step_callback("plan_created", {
+            "steps": [{"step_id": s.step_id, "task": s.task} for s in state.plan]
+        })
+
+    trace: list = []
     loop_count = 0
     max_loops = 20
 
@@ -50,15 +88,78 @@ def run_agent(task_description: str, repo_root: str, client=None):
         current_step = state.get_current_step()
 
         if current_step is None:
-            state.is_finished = True
+            state.run_status = RunStatus.COMPLETED
             state.final_answer = executor._build_final_answer(state)
             break
 
+        if step_callback:
+            step_callback("step_start", {
+                "step_id": current_step.step_id,
+                "task": current_step.task,
+            })
+
         state = executor.execute_current_step(state)
 
-        if state.test_results and not check_validation(state):
-            print("[!] Validation failed. Re-planning...")
+        # Record trajectory entry after each step
+        executed = state.plan[-1] if state.plan else None
+        for s in reversed(state.plan):
+            if s.status.value in ("completed", "failed"):
+                executed = s
+                break
+        if executed:
+            entry = {
+                "run_id": run_id,
+                "loop": loop_count,
+                "step_id": executed.step_id,
+                "task": executed.task,
+                "status": executed.status.value,
+                "retry_count": executed.retry_count,
+                "tool_results": [
+                    {"tool": r.tool_name, "success": r.success, "error": r.error}
+                    for r in executed.tool_results
+                ],
+                "error": executed.error,
+                "timestamp": time.time(),
+                "elapsed_s": round(time.time() - started_at, 2),
+            }
+            trace.append(entry)
+            if step_callback:
+                step_callback("step_done", entry)
+
+        if state.test_results and get_validation_status(state) != ValidationStatus.PASSED:
+            if state.replan_count >= state.budget.max_replans:
+                print("[!] Replan limit reached. Abandoning.")
+                state.run_status = RunStatus.FAILED
+                state.stop_reason = "replan_limit_exceeded"
+                if step_callback:
+                    step_callback("abandoned", {"reason": "replan_limit_exceeded"})
+                break
+            print("[!] Validation failed. Replanning...")
             planner.adjust_plan(state)
+            if step_callback:
+                step_callback("replan", {
+                    "replan_count": state.replan_count,
+                    "steps": [{"step_id": s.step_id, "task": s.task} for s in state.plan],
+                })
+
+    state.finished_at = time.time()
+
+    if step_callback:
+        step_callback("done", {
+            "validation": state.validation_status.value,
+            "run_status": state.run_status.value,
+            "files_modified": state.files_modified,
+            "replan_count": state.replan_count,
+            "elapsed_s": round(state.finished_at - started_at, 2),
+            "final_answer": state.final_answer or "",
+        })
+
+    # Write trajectory log
+    if trace_path:
+        Path(trace_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(trace_path, "w", encoding="utf-8") as f:
+            for entry in trace:
+                f.write(json.dumps(entry) + "\n")
 
     print("\n==============================")
     print("[*] Final Answer")

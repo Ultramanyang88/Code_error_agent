@@ -1,7 +1,52 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Secrets
 .env
-.DS_Store
+.env.*
+!.env.example
+
+# Agent runtime artifacts (generated, not tracked)
+.agent_memory/
+.agent_index/
 .cache/
 cache/
+workspace/
+.workspace/
+
+# Eval outputs (reproducible from source)
+testcase/results/
+testcase/baseline.json
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node (MCP npx tools)
+node_modules/
+
+# Logs / traces
+*.log
+trace.jsonl
+.agent_index/

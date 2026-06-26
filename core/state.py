@@ -7,7 +7,7 @@ from enum import Enum
 import time
 import uuid
 
-
+# single plan step progress
 class StepStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
@@ -15,6 +15,41 @@ class StepStatus(str, Enum):
     FAILED = "failed"
     SKIPPED = "skipped"
 
+# test/verification result
+class ValidationStatus(str, Enum):
+    NOT_RUN = "not_run"
+    PASSED = "passed"
+    FAILED = "failed"
+    ERROR = "error"
+
+class RunStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+@dataclass(frozen=True)
+class AgentBudget:
+    max_plan_steps: int = 8
+    max_tool_calls: int = 30
+    max_tool_rounds_per_steps: int = 4
+    max_step_retries: int = 6
+    max_replans: int = 6
+    deadline_seconds: int = 600
+
+    def __post_init__(self) -> None:
+        values = {
+            "max_plan_steps": self.max_plan_steps,
+            "max_tool_calls": self.max_tool_calls,
+            "max_tool_rounds_per_steps": self.max_tool_rounds_per_steps,
+            "max_step_retries": self.max_step_retries,
+            "max_replans": self.max_replans,
+            "deadline_seconds": self.deadline_seconds,
+        }
+        for name, value in values.items():
+            if value <= 0:
+                raise ValueError(f"{name} must be greater than 0")
 
 @dataclass
 class ToolResult:
@@ -92,6 +127,22 @@ class PlanStep:
 class AgentState:
     input_query: str
     repo_root: str
+    repo_url: Optional[str] = None
+    branch: Optional[str] = None
+    workspace_root: Optional[str] = None
+    project_type: Optional[str] = None
+    budget: AgentBudget = field(default_factory=AgentBudget)
+
+    run_status: RunStatus = RunStatus.PENDING
+    validation_status: ValidationStatus = ValidationStatus.NOT_RUN
+    replan_count: int = 0
+    tool_call_count: int = 0
+    started_at: Optional[float] = None
+    finished_at: Optional[float] = None
+    stop_reason: Optional[str] = None
+
+    setup_commands: List[str] = field(default_factory=list)
+    test_commands: List[str] = field(default_factory=list)
 
     run_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     plan: List[PlanStep] = field(default_factory=list)
@@ -107,11 +158,8 @@ class AgentState:
     test_results: List[ToolResult] = field(default_factory=list)
     errors_seen: List[str] = field(default_factory=list)
 
-    is_finished: bool = False
+    
     final_answer: Optional[str] = None
-
-    max_steps: int = 20
-    max_retries_per_step: int = 2
 
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -136,7 +184,7 @@ class AgentState:
     def get_current_step(self) -> Optional[PlanStep]:
         for step in self.plan:
             if step.status in {StepStatus.PENDING, StepStatus.FAILED}:
-                if step.retry_count <= self.max_retries_per_step:
+                if step.retry_count <= self.budget.max_step_retries:
                     return step
         return None
 
@@ -154,8 +202,14 @@ class AgentState:
                 if file_path not in self.files_modified:
                     self.files_modified.append(file_path)
 
-        if result.tool_name in {"run_tests", "run_command"}:
+        if result.tool_name == "run_tests":
             self.test_results.append(result)
+            if result.metadata.get("timed_out") or result.metadata.get("execution_error"):
+                self.validation_status = ValidationStatus.ERROR
+            elif result.success:
+                self.validation_status = ValidationStatus.PASSED
+            else:
+                self.validation_status = ValidationStatus.FAILED
 
         if not result.success and result.error:
             self.errors_seen.append(result.error)
@@ -219,6 +273,10 @@ class AgentState:
 
         return "\n\n".join(blocks)
 
+    @property
+    def is_finished(self) -> bool:
+        return self.run_status in {RunStatus.COMPLETED, RunStatus.FAILED}
+
     def should_stop(self) -> bool:
         if self.is_finished:
             return True
@@ -236,7 +294,7 @@ class AgentState:
         if self.plan and len(completed_or_failed) == len(self.plan):
             return True
 
-        if len(self.tool_history) >= self.max_steps:
+        if len(self.tool_history) >= self.budget.max_tool_calls:
             return True
 
         return False

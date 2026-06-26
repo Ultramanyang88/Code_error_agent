@@ -1,0 +1,3 @@
+Fix the bug in eval_module.py. Division operations are silently producing wrong results or crashing with a ZeroDivisionError instead of a proper EvalError.
+
+The test suite in test_eval.py must pass after your fix. Run the tests to verify.

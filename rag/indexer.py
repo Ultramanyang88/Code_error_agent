@@ -180,6 +180,9 @@ class RepoIndexer:
     def _collect_chunks(self) -> List[CodeChunk]:
         chunks: List[CodeChunk] = []
 
+        chunks.extend(self._inject_tool_spec_chunks())
+        chunks.extend(self._inject_skill_chunks())
+
         for file_path in self.repo_root.rglob("*"):
             if not file_path.is_file():
                 continue
@@ -209,6 +212,92 @@ class RepoIndexer:
                 file_chunks = self._chunk_text_file(rel_path, content)
 
             chunks.extend(file_chunks)
+
+        return chunks
+
+    def _inject_tool_spec_chunks(self) -> List[CodeChunk]:
+        """Create one synthetic chunk per registered tool, from TOOL_SPECS."""
+        chunks: List[CodeChunk] = []
+        try:
+            import sys as _sys
+            _sys.path.insert(0, str(self.repo_root))
+            from tools.specs import TOOL_SPECS
+        except Exception:
+            return chunks
+
+        for tool_name, spec in TOOL_SPECS.items():
+            desc = spec.get("description", "")
+            when_to_use = "\n".join(f"- {u}" for u in spec.get("when_to_use", []))
+            params = spec.get("parameters", {})
+            param_lines = []
+            for p_name, p_meta in params.items():
+                req = " [required]" if p_meta.get("required") else ""
+                param_lines.append(f"  {p_name}: {p_meta.get('description', '')}{req}")
+            params_text = "\n".join(param_lines) or "  (no parameters)"
+
+            content = (
+                f"Tool: {tool_name}\n"
+                f"Description: {desc}\n"
+                f"When to use:\n{when_to_use}\n"
+                f"Parameters:\n{params_text}\n"
+                f"Output: {spec.get('output', '')}"
+            )
+
+            chunks.append(self._make_chunk(
+                file_path=f"__knowledge__/tools/{tool_name}",
+                content=content,
+                chunk_type="tool_summary",
+                symbol_name=tool_name,
+                start_line=1,
+                end_line=content.count("\n") + 1,
+                language="text",
+                metadata={"kind": "tool_summary", "tool_name": tool_name},
+            ))
+
+        return chunks
+
+    def _inject_skill_chunks(self) -> List[CodeChunk]:
+        """Create one synthetic chunk per skill .md file."""
+        chunks: List[CodeChunk] = []
+        skills_dir = self.repo_root / "skills"
+        if not skills_dir.exists():
+            return chunks
+
+        import re as _re
+        for path in sorted(skills_dir.glob("*.md")):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            match = _re.match(r"^---\n(.*?)\n---\n(.*)", text, _re.DOTALL)
+            if not match:
+                continue
+            frontmatter, body = match.group(1), match.group(2).strip()
+
+            name_m = _re.search(r"^name:\s*(.+)$", frontmatter, _re.MULTILINE)
+            kw_m = _re.search(r"^trigger_keywords:\s*\[(.+)\]$", frontmatter, _re.MULTILINE)
+            sum_m = _re.search(r"^summary:\s*(.+)$", frontmatter, _re.MULTILINE)
+            if not (name_m and sum_m):
+                continue
+
+            name = name_m.group(1).strip()
+            summary = sum_m.group(1).strip()
+            keywords = kw_m.group(1) if kw_m else ""
+
+            content = (
+                f"Skill: {name}\n"
+                f"Trigger keywords: {keywords}\n"
+                f"Summary: {summary}\n\n"
+                f"Procedure:\n{body}"
+            )
+
+            chunks.append(self._make_chunk(
+                file_path=f"__knowledge__/skills/{path.stem}",
+                content=content,
+                chunk_type="skill_summary",
+                symbol_name=name,
+                start_line=1,
+                end_line=content.count("\n") + 1,
+                language="text",
+                metadata={"kind": "skill_summary", "skill_name": name},
+            ))
 
         return chunks
 

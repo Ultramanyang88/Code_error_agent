@@ -5,7 +5,9 @@ import json
 import re
 import traceback
 
-from .state import AgentState, PlanStep, StepStatus, ToolResult
+from .state import AgentState, PlanStep, RunStatus, StepStatus, ToolResult
+from tools.specs import TOOL_SPECS
+from skills.registry import SkillRegistry
 from .memory import AgentMemory
 
 
@@ -27,21 +29,46 @@ class Executor:
         tools: Optional[Dict[str, Any]] = None,
         memory: Optional[AgentMemory] = None,
         max_tool_rounds: int = 4,
+        skills_dir: str= "skills"
     ):
         self.client = client
         self.tools = tools or {}
         self.memory = memory or AgentMemory()
         self.max_tool_rounds = max_tool_rounds
+        self.skill_registry = SkillRegistry(skills_dir=skills_dir)
+    
+    def _validate_tool_arg(
+            self,
+            tool_name: str,
+            arguments: Dict[str, Any],
+    ) -> Optional[str]:
+        """return an error string if required args are missing, else None."""
+        spec = TOOL_SPECS.get(tool_name)
+        if not spec:
+            return None
+
+        params = spec.get("parameters", {})
+        missing = [
+            name
+            for name, meta in params.items()
+            if meta.get("required") and arguments.get(name) is None
+        ]
+        if missing:
+            return f"Missing required args for {tool_name}: {missing}"
+        return None
 
     def execute_current_step(self, state: AgentState) -> AgentState:
         current_step = state.get_current_step()
 
         if current_step is None:
-            state.is_finished = True
+            state.run_status = RunStatus.COMPLETED
             state.final_answer = self._build_final_answer(state)
             return state
 
         current_step.mark_running()
+        print(f"\n  [step {current_step.step_id}] {current_step.task}")
+        if current_step.suggested_tools:
+            print(f"  [tools]  {', '.join(current_step.suggested_tools)}")
 
         try:
             if self.client is None:
@@ -52,11 +79,13 @@ class Executor:
             if current_step.tool_results and not any(r.success for r in current_step.tool_results):
                 error = current_step.tool_results[-1].error or "All tools failed for this step."
                 current_step.mark_failed(error)
+                print(f"  [step {current_step.step_id}] FAILED — {error[:120]}")
                 state.add_history(
                     f"Step {current_step.step_id} failed: {current_step.task}\n{error}"
                 )
             else:
                 current_step.mark_completed(result_text)
+                print(f"  [step {current_step.step_id}] DONE")
                 state.add_history(
                     f"Step {current_step.step_id} completed: {current_step.task}\n{result_text}"
                 )
@@ -135,7 +164,7 @@ class Executor:
                 final_outputs.append(content)
                 break
 
-            tool_name = tool_call.get("tool_name")
+            tool_name = tool_call.get("tool_name") or ""
             arguments = tool_call.get("arguments", {})
 
             tool_result = self._execute_tool(tool_name, arguments, state)
@@ -323,40 +352,69 @@ class Executor:
             )
 
         arguments = self._normalize_tool_arguments(tool_name, arguments or {})
+        schema_error = self._validate_tool_arg(tool_name, arguments)
+        if schema_error:
+            print(f"    ✗ [SCHEMA] {tool_name}: {schema_error}")
+            return ToolResult(
+                tool_name=tool_name,
+                success=False,
+                output="",
+                error=f"Schema validation failed: {schema_error}"
+            )
+
+        self._log_tool_call(tool_name, arguments)
+
         tool_fn = self.tools[tool_name]
 
         try:
             result = tool_fn(state=state, **arguments)
 
             if isinstance(result, ToolResult):
+                self._log_tool_result(result)
                 return result
 
             if isinstance(result, dict):
-                return ToolResult(
+                r = ToolResult(
                     tool_name=tool_name,
                     success=bool(result.get("success", True)),
                     output=str(result.get("output", "")),
                     error=result.get("error"),
                     metadata=result.get("metadata", {}),
                 )
+                self._log_tool_result(r)
+                return r
 
-            return ToolResult(
-                tool_name=tool_name,
-                success=True,
-                output=str(result),
-            )
+            r = ToolResult(tool_name=tool_name, success=True, output=str(result))
+            self._log_tool_result(r)
+            return r
 
         except Exception as exc:
-            return ToolResult(
+            r = ToolResult(
                 tool_name=tool_name,
                 success=False,
                 output="",
                 error=f"{type(exc).__name__}: {str(exc)}",
-                metadata={
-                    "tool_name": tool_name,
-                    "arguments": arguments,
-                },
+                metadata={"tool_name": tool_name, "arguments": arguments},
             )
+            self._log_tool_result(r)
+            return r
+
+    def _log_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> None:
+        key_args = {k: v for k, v in arguments.items()
+                    if v is not None and k not in {"include_hidden", "replace_all"}}
+        args_str = ", ".join(
+            f"{k}={repr(v)[:200] if isinstance(v, str) else repr(v)}"
+            for k, v in list(key_args.items())[:3]
+        )
+        print(f"    → [{tool_name}] {args_str}")
+
+    def _log_tool_result(self, result: ToolResult) -> None:
+        if result.success:
+            preview = (result.output or "").replace("\n", " ").strip()[:100]
+            print(f"    ✓ {preview or '(no output)'}")
+        else:
+            err = (result.error or "unknown error")[:120]
+            print(f"    ✗ {err}")
 
     def _normalize_tool_arguments(
         self,
@@ -488,6 +546,23 @@ class Executor:
     def _build_messages(self, step: PlanStep, state: AgentState) -> List[Dict[str, str]]:
         system_prompt = self._system_prompt()
 
+        relevant_skills = self.skill_registry.find_relevant(
+            query=step.task,
+            errors=state.errors_seen[-3:],
+        )
+        skills_text = ""
+        if relevant_skills:
+            skills_text = "Relevant skills:\n" + "\n\n".join(
+                f"[{s.name}]\n{s.summary}" for s in relevant_skills
+            )
+
+        relevant_memory = self.memory.retrieve_relevant(query=step.task, top_k=3)
+        memory_text = self.memory.summarize_short_term(max_items=3, max_chars=1500)
+        if relevant_memory:
+            memory_text += "\n\nRelevant past insights:\n" + "\n".join(
+                f"-[{m.memory_type}]{m.content}" for m in relevant_memory
+            )
+
         user_prompt = f"""
 User request:
 {state.input_query}
@@ -508,10 +583,13 @@ Retrieved context:
 {state.retrieved_context_text(max_chunks=3, max_chars_per_chunk=800)}
 
 Memory:
-{self.memory.summarize_short_term(max_items=3, max_chars=1500)}
+{memory_text}
 
 Recent tool results:
 {state.recent_tool_summary(limit=3)}
+
+Available skills:
+{skills_text}
 
 Available tools:
 {self._tool_descriptions()}
@@ -698,66 +776,102 @@ If the current step is fully complete and no more tool call is needed, return a 
         return True
 
     def _build_final_answer(self, state: AgentState) -> str:
-        completed = [s for s in state.plan if s.status == StepStatus.COMPLETED]
-        failed = [s for s in state.plan if s.status == StepStatus.FAILED]
+        """
+        If an LLM client is available, ask it to write a concise summary.
+        Otherwise produce a compact rule-based summary (no raw tool dumps).
+        """
+        if self.client:
+            return self._llm_final_summary(state)
+        return self._rule_based_summary(state)
 
-        lines = [
-            "Agent run finished.",
-            "",
-            f"Completed steps: {len(completed)}",
-            f"Failed steps: {len(failed)}",
-            "",
-            "Plan execution summary:",
-        ]
+    def _llm_final_summary(self, state: AgentState) -> str:
+        """Ask the LLM to write a 3-5 line result summary."""
+        # Collect compact evidence: what was read, modified, tested
+        evidence_lines = [f"Task: {state.input_query}"]
+        if state.files_read:
+            evidence_lines.append("Files inspected: " + ", ".join(state.files_read))
+        if state.files_modified:
+            evidence_lines.append("Files modified: " + ", ".join(state.files_modified))
 
-        for step in state.plan:
-            lines.append("")
-            lines.append(f"Step {step.step_id}: {step.task}")
-            lines.append(f"Status: {step.status.value}")
+        # Key symbols from retrieved context (non-knowledge-base only)
+        symbols = []
+        for item in state.retrieved_context[:10]:
+            sym = item.get("symbol_name")
+            fp = item.get("file_path", "")
+            if sym and not fp.startswith("__knowledge__"):
+                symbols.append(f"{sym} ({fp})")
+        if symbols:
+            evidence_lines.append("Key symbols: " + ", ".join(dict.fromkeys(symbols)))
 
-            if step.result:
-                result = step.result
-                if len(result) > 2500:
-                    result = result[:2500] + "\n...[truncated]"
-                lines.append("Result:")
-                lines.append(result)
+        # Last test outcome
+        if state.test_results:
+            evidence_lines.append("Last test output: " + state.test_results[-1][:300])
 
-            if step.error:
-                lines.append("Error:")
-                lines.append(step.error)
+        # Step outcomes (just task + status, no raw output)
+        step_lines = []
+        for s in state.plan:
+            step_lines.append(f"  Step {s.step_id} [{s.status.value}]: {s.task}")
+            if s.status == StepStatus.FAILED and s.error:
+                step_lines.append(f"    Error: {s.error[:120]}")
+        evidence_lines.append("Steps:\n" + "\n".join(step_lines))
 
-        lines.extend(
-            [
-                "",
-                "Files read:",
-                "\n".join(f"- {f}" for f in state.files_read) or "- None",
-                "",
-                "Files modified:",
-                "\n".join(f"- {f}" for f in state.files_modified) or "- None",
-            ]
+        evidence = "\n".join(evidence_lines)
+
+        prompt = (
+            "You are writing the final result card for an autonomous coding agent run.\n\n"
+            "STRICT RULES — violating any rule makes your answer worthless:\n"
+            "1. Only state facts that appear verbatim in the Evidence section below.\n"
+            "2. Every claim must be traceable to a specific file name or line in the evidence.\n"
+            "3. If the evidence does not contain enough information to answer, write exactly:\n"
+            "   'Insufficient evidence — the agent did not read the files needed to answer this.'\n"
+            "   Do NOT guess, infer, or fill gaps with plausible-sounding details.\n"
+            "4. Do NOT mention tool names, step numbers, or internal agent mechanics.\n"
+            "5. Max 6 lines. Plain English, no markdown headers.\n\n"
+            "FORMAT:\n"
+            "- Bug fix: one line per change (file, what changed, test result).\n"
+            "- Project review: one line saying what the project does (cite the file you got this from),\n"
+            "  then bullet the main components you actually read.\n\n"
+            f"Evidence:\n{evidence}"
         )
 
-        if state.retrieved_context:
-            lines.append("")
-            lines.append("Retrieved context:")
+        try:
+            return self.client.chat([{"role": "user", "content": prompt}])
+        except Exception:
+            return self._rule_based_summary(state)
 
-            for item in state.retrieved_context[:8]:
-                file_path = item.get("file_path", "unknown")
-                start_line = item.get("start_line", "?")
-                end_line = item.get("end_line", "?")
-                symbol = item.get("symbol_name")
-                score = item.get("rerank_score", item.get("score", 0.0))
+    def _rule_based_summary(self, state: AgentState) -> str:
+        """Compact summary without raw tool output dumps."""
+        completed = [s for s in state.plan if s.status == StepStatus.COMPLETED]
+        failed = [s for s in state.plan if s.status == StepStatus.FAILED]
+        lines = []
 
-                lines.append(
-                    f"- {file_path}:{start_line}-{end_line} "
-                    f"symbol={symbol} score={score}"
-                )
+        if state.files_modified:
+            lines.append(f"Modified {len(state.files_modified)} file(s): " + ", ".join(state.files_modified))
+        else:
+            lines.append("No files were modified.")
+
+        if state.test_results:
+            last = state.test_results[-1]
+            snippet = last.replace("\n", " ").strip()[:200]
+            lines.append(f"Tests: {snippet}")
+
+        lines.append(f"Steps: {len(completed)} completed, {len(failed)} failed out of {len(state.plan)}.")
 
         if failed:
-            lines.append("")
-            lines.append("Remaining errors:")
+            lines.append("Failed steps: " + "; ".join(
+                f"step {s.step_id} — {(s.error or 'unknown')[:80]}" for s in failed
+            ))
 
-            for step in failed:
-                lines.append(f"- Step {step.step_id}: {step.error}")
+        # Key symbols found (for review tasks)
+        symbols = []
+        for item in state.retrieved_context[:8]:
+            sym = item.get("symbol_name")
+            fp = item.get("file_path", "")
+            if sym and not fp.startswith("__knowledge__"):
+                entry = f"{sym} ({fp})"
+                if entry not in symbols:
+                    symbols.append(entry)
+        if symbols and not state.files_modified:
+            lines.append("Key symbols found: " + ", ".join(symbols[:6]))
 
         return "\n".join(lines)

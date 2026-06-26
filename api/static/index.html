@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Code Error Agent</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+  body { font-family: 'Inter', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .log-entry { animation: fadeIn 0.15s ease-in; }
+  .bubble-in { animation: fadeIn 0.2s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+  #log::-webkit-scrollbar-track { background: #1e1e2e; }
+  #log::-webkit-scrollbar-thumb { background: #444; }
+  .drop-active { border-color: #6366f1 !important; background: #eef2ff !important; }
+  .pulse-dot { animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .step-bar { transition: width 0.4s ease; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<!-- Header -->
+<header class="bg-white border-b border-gray-200 px-6 py-3.5 flex items-center gap-3 sticky top-0 z-10">
+  <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white text-sm font-bold shrink-0">A</div>
+  <h1 class="text-base font-semibold text-gray-900">Code Error Agent</h1>
+  <div id="session-badge" class="hidden items-center gap-2 ml-2 px-3 py-1 bg-gray-100 rounded-full">
+    <span class="w-2 h-2 bg-green-500 rounded-full shrink-0"></span>
+    <span id="session-label" class="text-xs text-gray-600 mono max-w-xs truncate"></span>
+  </div>
+  <div class="ml-auto flex items-center gap-3">
+    <div id="status-badge" class="hidden items-center gap-2">
+      <span class="pulse-dot w-2 h-2 bg-indigo-500 rounded-full"></span>
+      <span class="text-sm text-gray-500">Running…</span>
+    </div>
+    <button id="new-session-btn" onclick="endSession()" class="hidden text-xs text-gray-400 hover:text-red-500 transition px-2 py-1 rounded-lg hover:bg-red-50">
+      ✕ New session
+    </button>
+  </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 py-6">
+
+<!-- ── Setup panel (shown before session starts) ── -->
+<div id="setup-panel">
+  <div class="max-w-2xl mx-auto">
+    <div class="text-center mb-8 mt-4">
+      <h2 class="text-2xl font-semibold text-gray-900 mb-2">What repo do you want to debug?</h2>
+      <p class="text-sm text-gray-500">Paste a GitHub URL or upload a file, then chat with the agent.</p>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+      <!-- Tab switcher -->
+      <div class="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit mb-5">
+        <button id="tab-url" onclick="switchTab('url')"
+          class="tab-btn px-4 py-1.5 rounded-md text-sm font-medium bg-white shadow-sm text-gray-800 transition">
+          GitHub URL
+        </button>
+        <button id="tab-file" onclick="switchTab('file')"
+          class="tab-btn px-4 py-1.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700 transition">
+          Upload File
+        </button>
+      </div>
+
+      <!-- URL input -->
+      <div id="pane-url" class="mb-4">
+        <input id="repo-url" type="text" placeholder="https://github.com/user/repo"
+          class="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mono"
+          onkeydown="if(event.key==='Enter') startSession()" />
+      </div>
+
+      <!-- File upload -->
+      <div id="pane-file" class="mb-4 hidden">
+        <div id="drop-zone"
+          class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-indigo-400 transition"
+          ondragover="event.preventDefault(); this.classList.add('drop-active')"
+          ondragleave="this.classList.remove('drop-active')"
+          ondrop="handleDrop(event)"
+          onclick="document.getElementById('file-input').click()">
+          <div class="text-3xl mb-2">📂</div>
+          <p class="text-sm text-gray-600">Drop a <strong>.py</strong> or <strong>.zip</strong> file here</p>
+          <p class="text-xs text-gray-400 mt-1">or click to browse</p>
+          <p id="file-name" class="text-sm font-medium text-indigo-600 mt-2 hidden"></p>
+        </div>
+        <input id="file-input" type="file" accept=".py,.zip" class="hidden" onchange="handleFileSelect(event)" />
+      </div>
+
+      <!-- First message / task -->
+      <div class="mb-4">
+        <label class="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide">First message <span class="normal-case font-normal text-gray-400">(optional)</span></label>
+        <textarea id="task-input" rows="2"
+          placeholder="Analyze this repository for bugs. Fix any bugs found and run the tests to verify…"
+          class="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
+      </div>
+
+      <!-- LLM config (collapsible) -->
+      <div class="mb-5">
+        <button onclick="toggleLLM()" class="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 transition">
+          <svg id="llm-chevron" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+          LLM Configuration
+        </button>
+        <div id="llm-panel" class="hidden mt-3 grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Provider</label>
+            <select id="llm-provider" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">Fallback (no LLM)</option>
+              <option value="openai_compatible">OpenAI-compatible</option>
+              <option value="ollama">Ollama</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Base URL</label>
+            <input id="llm-base-url" type="text" placeholder="https://api.openai.com/v1"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mono" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Model</label>
+            <input id="llm-model" type="text" placeholder="gpt-4o-mini"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mono" />
+          </div>
+        </div>
+      </div>
+
+      <button id="run-btn" onclick="startSession()"
+        class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl transition text-sm flex items-center justify-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        Start session
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Chat panel (shown after session starts) ── -->
+<div id="chat-panel" class="hidden">
+  <div class="grid grid-cols-4 gap-4 items-start">
+
+    <!-- Plan sidebar -->
+    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden sticky top-20">
+      <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <span class="text-sm font-semibold text-gray-700">Plan</span>
+        <span id="plan-counter" class="text-xs text-gray-400"></span>
+      </div>
+      <div id="plan-steps" class="p-3 space-y-1.5 max-h-[32rem] overflow-y-auto text-xs text-gray-500">
+        <div class="text-gray-400 italic px-2">Waiting for first run…</div>
+      </div>
+    </div>
+
+    <!-- Chat column -->
+    <div class="col-span-3 flex flex-col gap-3">
+
+      <!-- Conversation thread -->
+      <div id="chat-thread" class="space-y-4 min-h-16"></div>
+
+      <!-- Live log (hidden when idle, shown during run) -->
+      <div id="log-panel" class="hidden bg-gray-900 rounded-2xl border border-gray-700 overflow-hidden">
+        <div class="px-4 py-2 border-b border-gray-700 flex items-center gap-2">
+          <div class="flex gap-1.5">
+            <div class="w-2.5 h-2.5 rounded-full bg-red-500"></div>
+            <div class="w-2.5 h-2.5 rounded-full bg-yellow-500"></div>
+            <div class="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+          </div>
+          <span class="text-xs text-gray-400 mono ml-1">agent log</span>
+          <button onclick="document.getElementById('log-panel').classList.add('hidden')" class="ml-auto text-xs text-gray-500 hover:text-gray-300 transition">hide</button>
+        </div>
+        <div id="log" class="p-4 overflow-y-auto max-h-56 space-y-0.5 mono text-xs leading-relaxed"></div>
+      </div>
+
+      <!-- Chat input -->
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-3">
+        <div class="flex gap-2 items-end">
+          <textarea id="chat-input" rows="2"
+            placeholder="Ask a follow-up or give the agent a new task… (Enter to send, Shift+Enter for newline)"
+            class="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none bg-gray-50"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
+          <button id="send-btn" onclick="sendMessage()"
+            class="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-5 rounded-xl transition text-sm flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+            </svg>
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+// ── State ──
+let currentTab = 'url';
+let selectedFile = null;
+let currentSessionId = null;
+let currentRunId = null;
+let eventSource = null;
+let planSteps = [];
+let llmConfig = {};
+
+// ── Tab switching ──
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('pane-url').classList.toggle('hidden', tab !== 'url');
+  document.getElementById('pane-file').classList.toggle('hidden', tab !== 'file');
+  document.getElementById('tab-url').className = tab === 'url'
+    ? 'tab-btn px-4 py-1.5 rounded-md text-sm font-medium bg-white shadow-sm text-gray-800 transition'
+    : 'tab-btn px-4 py-1.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700 transition';
+  document.getElementById('tab-file').className = tab === 'file'
+    ? 'tab-btn px-4 py-1.5 rounded-md text-sm font-medium bg-white shadow-sm text-gray-800 transition'
+    : 'tab-btn px-4 py-1.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700 transition';
+}
+
+// ── File handling ──
+function handleFileSelect(e) { const f = e.target.files[0]; if (f) setFile(f); }
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drop-active');
+  const f = e.dataTransfer.files[0];
+  if (f) setFile(f);
+}
+function setFile(f) {
+  selectedFile = f;
+  const el = document.getElementById('file-name');
+  el.textContent = '📎 ' + f.name;
+  el.classList.remove('hidden');
+}
+
+// ── LLM config toggle ──
+function toggleLLM() {
+  const panel = document.getElementById('llm-panel');
+  const chevron = document.getElementById('llm-chevron');
+  panel.classList.toggle('hidden');
+  chevron.style.transform = panel.classList.contains('hidden') ? '' : 'rotate(90deg)';
+}
+
+// ── Plan rendering ──
+const STATUS_ICON = {
+  pending:   '<span class="text-gray-400">○</span>',
+  running:   '<span class="text-blue-500 pulse-dot">◉</span>',
+  completed: '<span class="text-green-500">✓</span>',
+  failed:    '<span class="text-red-500">✗</span>',
+  skipped:   '<span class="text-gray-400">—</span>',
+};
+
+function renderPlan(steps) {
+  planSteps = steps;
+  const el = document.getElementById('plan-steps');
+  el.innerHTML = steps.map(s => `
+    <div id="step-${s.step_id}" class="flex items-start gap-2 px-2 py-1.5 rounded-lg">
+      <span class="mt-0.5 w-4 shrink-0 text-center">${STATUS_ICON[s.status || 'pending']}</span>
+      <span class="leading-tight">${escHtml(s.task)}</span>
+    </div>
+  `).join('');
+  document.getElementById('plan-counter').textContent = `0 / ${steps.length}`;
+}
+
+function updateStepStatus(stepId, status) {
+  const el = document.getElementById(`step-${stepId}`);
+  if (!el) return;
+  el.querySelector('span:first-child').outerHTML =
+    `<span class="mt-0.5 w-4 shrink-0 text-center">${STATUS_ICON[status] || STATUS_ICON.pending}</span>`;
+  const done = planSteps.filter(s => s.status === 'completed' || s.status === 'failed').length;
+  document.getElementById('plan-counter').textContent = `${done} / ${planSteps.length}`;
+}
+
+// ── Log ──
+function log(text, colorClass = 'text-gray-300') {
+  const el = document.getElementById('log');
+  const div = document.createElement('div');
+  div.className = `log-entry ${colorClass}`;
+  div.textContent = text;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog() { document.getElementById('log').innerHTML = ''; }
+
+// ── Chat bubbles ──
+function appendUserBubble(text) {
+  const thread = document.getElementById('chat-thread');
+  const div = document.createElement('div');
+  div.className = 'flex justify-end bubble-in';
+  div.innerHTML = `
+    <div class="max-w-lg bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed">
+      ${escHtml(text)}
+    </div>`;
+  thread.appendChild(div);
+  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function appendAgentPlaceholder(runId) {
+  const thread = document.getElementById('chat-thread');
+  const div = document.createElement('div');
+  div.id = `agent-msg-${runId}`;
+  div.className = 'flex justify-start bubble-in';
+  div.innerHTML = `
+    <div class="max-w-xl bg-white rounded-2xl rounded-tl-sm border border-gray-200 shadow-sm px-4 py-3">
+      <div class="flex items-center gap-2 text-gray-400 text-sm">
+        <span class="pulse-dot w-2 h-2 bg-indigo-400 rounded-full"></span>
+        Working…
+      </div>
+    </div>`;
+  thread.appendChild(div);
+  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function fillAgentBubble(runId, data) {
+  const wrapper = document.getElementById(`agent-msg-${runId}`);
+  if (!wrapper) return;
+
+  const v = data.validation;
+  const badge =
+    v === 'passed'  ? '<span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">✅ Tests passed</span>'  :
+    v === 'not_run' ? '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">✨ Analysis complete</span>' :
+                     '<span class="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">❌ Could not fix</span>';
+
+  const meta = `<span class="text-xs text-gray-400">${data.elapsed_s}s · ${data.steps_completed}/${data.steps_total} steps</span>`;
+
+  const files = data.files_modified?.length
+    ? `<div class="mt-2 flex flex-wrap gap-1">
+        ${data.files_modified.map(f => `<span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-xs mono">${escHtml(f)}</span>`).join('')}
+       </div>`
+    : '';
+
+  const answer = data.final_answer
+    ? `<div class="mt-3 pt-3 border-t border-gray-100 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">${escHtml(data.final_answer)}</div>`
+    : '';
+
+  wrapper.innerHTML = `
+    <div class="max-w-xl bg-white rounded-2xl rounded-tl-sm border border-gray-200 shadow-sm px-4 py-3">
+      <div class="flex items-center justify-between gap-3 mb-1">
+        ${badge}
+        ${meta}
+      </div>
+      ${files}
+      ${answer}
+    </div>`;
+  wrapper.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function appendErrorBubble(msg) {
+  const thread = document.getElementById('chat-thread');
+  const div = document.createElement('div');
+  div.className = 'flex justify-start bubble-in';
+  div.innerHTML = `
+    <div class="max-w-xl bg-red-50 border border-red-200 text-red-700 rounded-2xl rounded-tl-sm px-4 py-3 text-sm">
+      ✗ ${escHtml(msg)}
+    </div>`;
+  thread.appendChild(div);
+  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+// ── SSE event handler ──
+function handleEvent({ type, data }) {
+  if (type === 'plan_created') {
+    renderPlan(data.steps.map(s => ({ ...s, status: 'pending' })));
+    log(`[Plan] ${data.steps.length} steps`, 'text-indigo-400');
+    data.steps.forEach((s, i) => log(`  ${i + 1}. ${s.task}`, 'text-gray-500'));
+    return;
+  }
+  if (type === 'step_start') {
+    planSteps = planSteps.map(s => s.step_id === data.step_id ? { ...s, status: 'running' } : s);
+    updateStepStatus(data.step_id, 'running');
+    log(`\n▶ ${data.task}`, 'text-blue-400');
+    return;
+  }
+  if (type === 'step_done') {
+    planSteps = planSteps.map(s => s.step_id === data.step_id ? { ...s, status: data.status } : s);
+    updateStepStatus(data.step_id, data.status);
+    const ok = data.status === 'completed';
+    log(`  [${data.status.toUpperCase()}]`, ok ? 'text-green-400' : 'text-red-400');
+    if (data.tool_results) {
+      data.tool_results.forEach(tr => {
+        log(`  ${tr.success ? '✓' : '✗'} ${tr.tool}${tr.error ? ': ' + tr.error.slice(0, 100) : ''}`,
+            tr.success ? 'text-gray-400' : 'text-red-400');
+      });
+    }
+    if (data.error) log(`  ${data.error.slice(0, 160)}`, 'text-red-400');
+    return;
+  }
+  if (type === 'replan') {
+    log(`\n⟳ Replan #${data.replan_count}`, 'text-yellow-400');
+    renderPlan(data.steps.map(s => ({
+      ...s,
+      status: planSteps.find(p => p.step_id === s.step_id)?.status || 'pending',
+    })));
+    return;
+  }
+  if (type === 'abandoned') { log(`\n⚠ ${data.reason}`, 'text-red-500'); return; }
+  if (type === 'error')     { log(`\n✗ ${data.message}`, 'text-red-500'); return; }
+}
+
+// ── Start session ──
+async function startSession() {
+  const url = currentTab === 'url' ? document.getElementById('repo-url').value.trim() : '';
+  const firstTask = document.getElementById('task-input').value.trim() ||
+    'Analyze this repository. Describe what it does and identify any bugs.';
+
+  if (currentTab === 'url' && !url)         { alert('Please enter a GitHub URL'); return; }
+  if (currentTab === 'file' && !selectedFile) { alert('Please select a file'); return; }
+
+  llmConfig = {
+    provider: document.getElementById('llm-provider').value,
+    baseUrl:  document.getElementById('llm-base-url').value.trim(),
+    model:    document.getElementById('llm-model').value.trim(),
+  };
+
+  setRunBtn(true);
+
+  const form = new FormData();
+  if (currentTab === 'url') form.append('repo_url', url);
+  else                      form.append('file', selectedFile);
+
+  try {
+    const res = await fetch('/api/session', { method: 'POST', body: form });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Failed to create session'); }
+    const body = await res.json();
+    currentSessionId = body.session_id;
+
+    // Switch to chat mode
+    document.getElementById('setup-panel').classList.add('hidden');
+    document.getElementById('chat-panel').classList.remove('hidden');
+    document.getElementById('session-badge').classList.remove('hidden');
+    document.getElementById('session-badge').classList.add('flex');
+    document.getElementById('session-label').textContent = body.repo_label || url || selectedFile?.name || 'session';
+    document.getElementById('new-session-btn').classList.remove('hidden');
+
+    setRunBtn(false);
+    await sendMessage(firstTask);
+  } catch (e) {
+    alert(e.message);
+    setRunBtn(false);
+  }
+}
+
+// ── Send follow-up ──
+async function sendMessage(overrideText) {
+  if (!currentSessionId) return;
+  const input = document.getElementById('chat-input');
+  const text = overrideText || input.value.trim();
+  if (!text) return;
+  if (!overrideText && input) input.value = '';
+
+  appendUserBubble(text);
+
+  const form = new FormData();
+  form.append('task', text);
+  if (llmConfig.provider) form.append('llm_provider', llmConfig.provider);
+  if (llmConfig.baseUrl)  form.append('llm_base_url', llmConfig.baseUrl);
+  if (llmConfig.model)    form.append('llm_model', llmConfig.model);
+
+  let runId;
+  try {
+    const res = await fetch(`/api/session/${currentSessionId}/message`, { method: 'POST', body: form });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Request failed'); }
+    runId = (await res.json()).run_id;
+    currentRunId = runId;
+  } catch (e) {
+    appendErrorBubble(e.message);
+    return;
+  }
+
+  appendAgentPlaceholder(runId);
+  clearLog();
+  document.getElementById('log-panel').classList.remove('hidden');
+  setStatus(true);
+  setSendBtn(true);
+
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource(`/api/run/${runId}/stream`);
+
+  eventSource.onmessage = (e) => {
+    try {
+      const event = JSON.parse(e.data);
+      if (event.type === 'stream_end') {
+        eventSource.close();
+        setSendBtn(false);
+        setStatus(false);
+        return;
+      }
+      if (event.type === 'done') {
+        fillAgentBubble(runId, event.data);
+        return;
+      }
+      handleEvent(event);
+    } catch (_) {}
+  };
+
+  eventSource.onerror = () => {
+    log('[Connection lost]', 'text-yellow-400');
+    eventSource.close();
+    setSendBtn(false);
+    setStatus(false);
+  };
+}
+
+// ── End session ──
+async function endSession() {
+  if (eventSource) eventSource.close();
+  if (currentSessionId) {
+    fetch(`/api/session/${currentSessionId}`, { method: 'DELETE' }).catch(() => {});
+  }
+  currentSessionId = null;
+  currentRunId = null;
+  planSteps = [];
+
+  document.getElementById('chat-panel').classList.add('hidden');
+  document.getElementById('setup-panel').classList.remove('hidden');
+  document.getElementById('session-badge').classList.add('hidden');
+  document.getElementById('session-badge').classList.remove('flex');
+  document.getElementById('new-session-btn').classList.add('hidden');
+  document.getElementById('chat-thread').innerHTML = '';
+  document.getElementById('plan-steps').innerHTML = '<div class="text-gray-400 italic px-2">Waiting for first run…</div>';
+  document.getElementById('log-panel').classList.add('hidden');
+  clearLog();
+  setStatus(false);
+  setSendBtn(false);
+  setRunBtn(false);
+}
+
+// ── UI helpers ──
+function setStatus(running) {
+  const el = document.getElementById('status-badge');
+  running ? el.classList.remove('hidden') : el.classList.add('hidden');
+}
+
+function setRunBtn(loading) {
+  const btn = document.getElementById('run-btn');
+  if (!btn) return;
+  btn.disabled = loading;
+  btn.innerHTML = loading
+    ? `<svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Setting up…`
+    : `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Start session`;
+  btn.className = loading
+    ? btn.className.replace('bg-indigo-600 hover:bg-indigo-700', 'bg-gray-400 cursor-not-allowed')
+    : btn.className.replace('bg-gray-400 cursor-not-allowed', 'bg-indigo-600 hover:bg-indigo-700');
+}
+
+function setSendBtn(busy) {
+  const btn = document.getElementById('send-btn');
+  const input = document.getElementById('chat-input');
+  if (!btn) return;
+  btn.disabled = busy;
+  input.disabled = busy;
+  btn.innerHTML = busy
+    ? `<svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>`
+    : `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg> Send`;
+  btn.className = busy
+    ? btn.className.replace('bg-indigo-600 hover:bg-indigo-700', 'bg-gray-400 cursor-not-allowed')
+    : btn.className.replace('bg-gray-400 cursor-not-allowed', 'bg-indigo-600 hover:bg-indigo-700');
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

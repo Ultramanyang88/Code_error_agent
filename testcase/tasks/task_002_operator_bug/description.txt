@@ -1,0 +1,3 @@
+Fix the bug in eval_module.py. Division expressions like "20/5" are failing with an unexpected error instead of returning the correct result.
+
+The test suite in test_eval.py must pass after your fix. Run the tests to verify.

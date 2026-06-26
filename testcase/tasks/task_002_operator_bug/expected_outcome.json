@@ -1,0 +1,12 @@
+{
+  "task_id": "task_002_operator_bug",
+  "description": "Agent must restore '/' in the tokenizer operator set",
+  "expected_validation": "PASSED",
+  "target_repo": "testcase/py",
+  "buggy_files": ["eval_module.py"],
+  "judge_criteria": [
+    "Agent correctly identifies the missing '/' in the tokenize() operator string",
+    "Fix is a minimal one-character change to the operator set",
+    "All 5 tests pass after the fix"
+  ]
+}

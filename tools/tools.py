@@ -30,6 +30,16 @@ IGNORED_DIRS = {
     ".vscode",
 }
 
+BINARY_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".bmp", ".tiff",
+    ".pdf", ".woff", ".woff2", ".ttf", ".eot", ".otf",
+    ".mp4", ".mp3", ".wav", ".mov", ".avi",
+    ".zip", ".tar", ".gz", ".rar", ".7z",
+    ".exe", ".dll", ".so", ".dylib", ".bin",
+    ".pyc", ".pyo", ".pyd",
+    ".class", ".o", ".a",
+}
+
 TEXT_FILE_EXTENSIONS = {
     ".py",
     ".txt",
@@ -101,6 +111,18 @@ def _is_probably_text_file(path: Path) -> bool:
         "requirements.txt",
         ".gitignore",
         ".env.example",
+        "README",
+        "CHANGELOG",
+        "CHANGES",
+        "HISTORY",
+        "LICENSE",
+        "LICENCE",
+        "CONTRIBUTING",
+        "AUTHORS",
+        "NOTICE",
+        "INSTALL",
+        "Pipfile",
+        "Procfile",
     }:
         return True
 
@@ -161,6 +183,9 @@ def list_files(
                     continue
 
                 if not include_hidden and _is_hidden(rel):
+                    continue
+
+                if not child.is_dir() and child.suffix.lower() in BINARY_EXTENSIONS:
                     continue
 
                 indent = "  " * depth

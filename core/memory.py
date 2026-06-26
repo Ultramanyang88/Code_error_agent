@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-import time
+import time, json
+from pathlib import Path
 
 from .state import ToolResult
 # short term will in tool results
@@ -34,10 +35,42 @@ class AgentMemory:
     - Useful implementation facts
     """
 
-    def __init__(self, short_term_limit: int = 12):
+    def __init__(self, short_term_limit: int = 12, persist_dir: Optional[str] = None):
         self.short_term_limit = short_term_limit
         self.short_term: List[ToolResult] = []
         self.long_term: List[MemoryItem] = []
+        self._persist_path = Path(persist_dir) / "memory.jsonl" if persist_dir else None
+        if self._persist_path:
+            self._load_from_disk()
+
+    def _load_from_disk(self) -> None:
+        if not self._persist_path or not self._persist_path.exists():
+            return
+        for line in self._persist_path.read_text().splitlines():
+            try:
+                d = json.loads(line)
+                self.long_term.append(MemoryItem(
+                    content=d["content"],
+                    memory_type=d.get("memory_type", "general"),
+                    source=d.get("source"),
+                    metadata=d.get("metadata", {}),
+                    created_at=d.get("created_at", time.time()),
+                ))
+            except Exception:
+                continue
+    
+    def _persist_insight(self, item: MemoryItem) -> None:
+        if not self._persist_path:
+            return
+        self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._persist_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "content": item.content,
+                "memory_type": item.memory_type,
+                "source": item.source,
+                "metadata": item.metadata,
+                "created_at": item.created_at,
+            }) + "\n")
 
     def add_tool_result(self, result: ToolResult) -> None:
         self.short_term.append(result)
@@ -66,7 +99,19 @@ class AgentMemory:
             metadata=metadata or {},
         )
         self.long_term.append(item)
+        self._persist_insight(item)
 
+    def retrieve_relevant(self, query: str, top_k: int= 3) -> List[MemoryItem]:
+        """Keyword-based relevance filter over long-term memory."""
+        query_lower = query.lower()
+        scored = []
+        for item in self.long_term:
+            score = sum(1 for word in query_lower.split() if word in item.content.lower())
+            if score > 0:
+                scored.append((score, item))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [item for _, item in scored[:top_k]]
+    
     def summarize_short_term(self, max_items: int = 8, max_chars: int = 4000) -> str:
         recent = self.short_term[-max_items:]
 

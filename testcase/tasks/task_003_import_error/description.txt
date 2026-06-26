@@ -1,0 +1,3 @@
+Fix the import error in main.py. Running the program crashes immediately with an ImportError before any expression can be evaluated.
+
+The test suite in test_eval.py must pass after your fix. Run the tests to verify.

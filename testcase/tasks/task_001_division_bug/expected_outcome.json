@@ -1,0 +1,12 @@
+{
+  "task_id": "task_001_division_bug",
+  "description": "Agent must restore the division-by-zero guard in evaluate()",
+  "expected_validation": "PASSED",
+  "target_repo": "testcase/py",
+  "buggy_files": ["eval_module.py"],
+  "judge_criteria": [
+    "Agent correctly identifies the missing division-by-zero check",
+    "Fix is applied to the evaluate() function, not elsewhere",
+    "All 5 tests pass after the fix"
+  ]
+}

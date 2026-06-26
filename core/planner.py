@@ -71,6 +71,8 @@ class Planner:
         """
         Re-plan after tool failure, validation failure, or incomplete result.
         """
+        state.replan_count += 1
+
         if self.client is None:
             new_steps = self._fallback_replan(state)
 
@@ -144,13 +146,38 @@ Schema:
 ]
 """.strip()
 
+    def _top_level_listing(self, repo_root: str) -> str:
+        """Quick top-level file listing so the planner knows what exists."""
+        from pathlib import Path as _Path
+        skip = {".git", "__pycache__", ".venv", "venv", "node_modules", ".agent_index"}
+        lines = []
+        try:
+            root = _Path(repo_root)
+            for entry in sorted(root.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
+                if entry.name.startswith(".") or entry.name in skip:
+                    continue
+                suffix = "/" if entry.is_dir() else ""
+                lines.append(f"  {entry.name}{suffix}")
+                if entry.is_dir():
+                    try:
+                        for child in sorted(entry.iterdir(), key=lambda p: p.name.lower())[:8]:
+                            if child.name.startswith(".") or child.name in skip:
+                                continue
+                            lines.append(f"    {child.name}{'/' if child.is_dir() else ''}")
+                    except PermissionError:
+                        pass
+        except Exception:
+            pass
+        return "\n".join(lines) or "(empty)"
+
     def _build_initial_plan_prompt(self, state: AgentState) -> str:
+        file_listing = self._top_level_listing(state.repo_root)
         return f"""
 User request:
 {state.input_query}
 
-Repository root:
-{state.repo_root}
+Repository top-level layout (use this to plan which files to read):
+{file_listing}
 
 Create a short execution plan for a coding agent.
 
@@ -178,6 +205,9 @@ Rules:
 """.strip()
 
     def _build_replan_prompt(self, state: AgentState) -> str:
+        errors_deduped = list(dict.fromkeys(state.errors_seen))[-5:]
+        errors_text = "\n".join(f"- {e[:300]}" for e in errors_deduped) or "None"
+
         return f"""
 The coding agent needs to re-plan.
 
@@ -191,7 +221,7 @@ Recent tool results:
 {state.recent_tool_summary(limit=5)}
 
 Errors seen:
-{state.errors_seen}
+{errors_text}
 
 Files read:
 {state.files_read}
