@@ -6,7 +6,7 @@ import re
 import traceback
 
 from .state import AgentState, PlanStep, RunStatus, StepStatus, ToolResult
-from tools.specs import TOOL_SPECS
+from tools.specs import TOOL_SPECS, to_openai_tools
 from skills.registry import SkillRegistry
 from .memory import AgentMemory
 
@@ -152,16 +152,15 @@ class Executor:
     def _llm_execute_step(self, step: PlanStep, state: AgentState) -> str:
         messages = self._build_messages(step, state)
         final_outputs: List[str] = []
+        tool_schema = to_openai_tools(list(self.tools.keys()))
 
         for round_idx in range(self.max_tool_rounds):
-            response = self.client.chat(messages)
-            content = self._normalize_llm_response(response)
-
-            tool_call = self._parse_tool_call(content)
+            response = self.client.chat(messages, tools=tool_schema)
+            tool_call, content = self._parse_response(response)
 
             # No tool call means the LLM has produced the final answer for this step.
             if tool_call is None:
-                final_outputs.append(content)
+                final_outputs.append(content or "No output produced.")
                 break
 
             tool_name = tool_call.get("tool_name") or ""
@@ -173,16 +172,27 @@ class Executor:
             state.add_tool_result(tool_result)
             self.memory.update_from_tool_result(tool_result)
 
-            messages.append(
-                {
+            if tool_call.get("raw"):
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": content,
+                        "tool_calls": [tool_call["raw"]],
+                    }
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call["raw"].get("id"),
+                        "content":tool_result.to_text(max_chars=2500),
+                    }
+                )
+            else:
+                messages.append({
                     "role": "assistant",
-                    "content": content,
-                }
-            )
-
-            # Use role=user instead of role=tool for better compatibility with Ollama/local models.
-            messages.append(
-                {
+                    "content": content
+                })
+                messages.append({
                     "role": "user",
                     "content": (
                         "Tool execution result:\n"
@@ -190,18 +200,31 @@ class Executor:
                         "Based on this result, either call the next tool using JSON only, "
                         "or return the final concise answer for the current step."
                     ),
-                }
-            )
+                })
 
             final_outputs.append(tool_result.to_text(max_chars=1500))
 
             if self._tool_result_is_enough(step, tool_result):
                 break
 
-        if not final_outputs:
-            return "No output produced."
+        return "\n\n".join(final_outputs) if final_outputs else "No output produced."
 
-        return "\n\n".join(final_outputs)
+    def _parse_response(self, response: Any) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+        if isinstance(response, dict) and "tool_calls" in response:
+            content = response.get("content")
+            raw_calls = response.get("tool_calls") or []
+            if raw_calls:
+                call = raw_calls[0]
+                fn = call.get("function", {})
+                try:
+                    arguments = json.loads(fn.get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    arguments = {}
+                return {"tool_name": fn.get("name"), "arguments": arguments, "raw": call}, content
+            return None, content
+
+        content = self._normalize_llm_response(response)
+        return self._parse_tool_call(content), content
 
     def _fallback_execute_step(self, step: PlanStep, state: AgentState) -> str:
         """
@@ -852,7 +875,7 @@ If the current step is fully complete and no more tool call is needed, return a 
 
         if state.test_results:
             last = state.test_results[-1]
-            snippet = last.replace("\n", " ").strip()[:200]
+            snippet = last.to_text(max_chars=200).replace("\n", " ").strip()
             lines.append(f"Tests: {snippet}")
 
         lines.append(f"Steps: {len(completed)} completed, {len(failed)} failed out of {len(state.plan)}.")

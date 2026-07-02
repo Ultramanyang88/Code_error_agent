@@ -7,6 +7,7 @@ import re
 
 import numpy as np
 
+from .model_cache import get_shared_cross_encoder, get_shared_embedder
 from .embedder import CodeEmbedder
 from .indexer import RepoIndexer, CodeChunk
 
@@ -33,7 +34,7 @@ class RAGEngine:
     ):
         self.repo_root = Path(repo_root).resolve()
         self.index_dir = index_dir
-        self.embedder = embedder or CodeEmbedder()
+        self.embedder = embedder or get_shared_embedder()
         self.indexer = RepoIndexer(
             repo_root=str(self.repo_root),
             index_dir=index_dir,
@@ -43,13 +44,7 @@ class RAGEngine:
         self.index = None
         self.chunks: List[CodeChunk] = []
 
-        self._cross_encoder = None
-        if use_cross_encoder:
-            try:
-                from sentence_transformers import CrossEncoder
-                self._cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-            except Exception:
-                pass
+        self._cross_encoder = get_shared_cross_encoder() if use_cross_encoder else None
 
         if auto_load:
             self.load_or_build()

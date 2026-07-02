@@ -46,14 +46,14 @@ class LLMClient:
     def chat(
         self,
         messages: List[Dict[str, str]],
-        tools: Optional[Any] = None,
-    ) -> str:
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> Any:
         if self.provider == "ollama":
-            return self._chat_ollama(messages)
+            return self._chat_ollama(messages, tools)
 
-        return self._chat_openai_compatible(messages)
+        return self._chat_openai_compatible(messages, tools)
 
-    def _chat_openai_compatible(self, messages: List[Dict[str, str]]) -> str:
+    def _chat_openai_compatible(self, messages: List[Dict[str, str]], tools=None) -> str:
         url = f"{self.base_url}/v1/chat/completions"
 
         payload = {
@@ -63,9 +63,11 @@ class LLMClient:
             "max_tokens": self.max_tokens,
         }
 
-        headers = {}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
 
         response = requests.post(
             url,
@@ -74,15 +76,23 @@ class LLMClient:
             timeout=self.timeout,
         )
 
-        response.raise_for_status()
+        if not response.ok:
+            raise requests.exceptions.HTTPError(
+                f"{response.status_code} error from {url}: {response.text[:1000]}",
+                response=response,
+            )
         data = response.json()
 
         try:
-            return data["choices"][0]["message"]["content"]
+            messages = data["choices"][0]["message"]
         except Exception:
             return json.dumps(data, indent=2, ensure_ascii=False)
 
-    def _chat_ollama(self, messages: List[Dict[str, str]]) -> str:
+        if tools:
+            return {"content": messages.get("content"), "tool_calls": messages.get("tool_calls")}
+        return messages.get("content", "")
+
+    def _chat_ollama(self, messages: List[Dict[str, str]], tools=None) -> str:
         url = f"{self.base_url}/api/chat"
 
         payload = {
@@ -94,6 +104,9 @@ class LLMClient:
                 "num_predict": self.max_tokens,
             },
         }
+        
+        if tools:
+            payload["tools"] = tools
 
         response = requests.post(
             url,
@@ -103,12 +116,62 @@ class LLMClient:
 
         response.raise_for_status()
         data = response.json()
-
+        messages = data.get("message", {})
+        if tools:
+            return {"content": messages.get("content"), "tool_calls": messages.get("tool_calls")}
         try:
-            return data["message"]["content"]
+            return messages["content"]
         except Exception:
             return json.dumps(data, indent=2, ensure_ascii=False)
 
+    def chat_stream(self, messages: List[Dict[str, str]]):
+        if self.provider == "ollama":
+            yield from self._chat_stream_ollama(messages)
+        else:
+            yield from self._chat_stream_openai_compatible(messages)
+
+    def _chat_stream_openai_compatible(self, messages):
+        url = f"{self.base_url}/v1/chat/completions"
+        payload = {"model": self.model, "messages": messages,
+                   "temperature": self.temperature, "max_tokens": self.max_tokens, "stream": True}
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        with requests.post(url, json=payload, headers=headers, timeout=self.timeout, stream=True) as resp:
+            if not resp.ok:
+                raise requests.exceptions.HTTPError(
+                    f"{resp.status_code} error from {url}: {resp.text[:1000]}",
+                    response=resp,
+                )
+            for line in resp.iter_lines():
+                if not line or not line.startswith(b"data: "):
+                    continue
+                chunk = line[len(b"data: "):]
+                if chunk.strip() == b"[DONE]":
+                    break
+                try:
+                    delta = json.loads(chunk)["choices"][0]["delta"].get("content")
+                except Exception:
+                    continue
+                if delta:
+                    yield delta
+
+    def _chat_stream_ollama(self, messages):
+        url = f"{self.base_url}/api/chat"
+        payload = {"model": self.model, "messages": messages, "stream": True,
+                   "options": {"temperature": self.temperature, "num_predict": self.max_tokens}}
+        with requests.post(url, json=payload, timeout=self.timeout, stream=True) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                delta = data.get("message", {}).get("content")
+                if delta:
+                    yield delta
+                if data.get("done"):
+                    break
 
 def create_local_llm_client(
     provider: str = "openai_compatible",

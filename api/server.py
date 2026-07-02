@@ -1,11 +1,3 @@
-"""
-FastAPI backend for the Code Error Agent web UI.
-
-Run:
-    python api/server.py
-    # or
-    uvicorn api.server:app --reload --port 8080
-"""
 from __future__ import annotations
 
 import asyncio
@@ -41,6 +33,126 @@ _runs: Dict[str, Dict[str, Any]] = {}
 # Session registry: session_id → {tmp_dir, repo_root, repo_label, history, last_active}
 _sessions: Dict[str, Dict[str, Any]] = {}
 
+_AGENT_TASK_KEYWORDS = {
+    "fix", "implement", "modify", "change", "update", "patch",
+    "debug", "solve", "add code", "complete code", "run the test", "run tests",
+}
+
+def _needs_full_agent_run(message: str) -> bool:
+    lower = message.lower()
+    return any(kw in lower for kw in _AGENT_TASK_KEYWORDS)
+
+@app.post("/api/session/{session_id}/chat")
+async def session_chat_stream(
+    session_id: str,
+    message: str = Form(...),
+    llm_provider: Optional[str] = Form(None),
+    llm_base_url: Optional[str] = Form(None),
+    llm_model: Optional[str] = Form(None),
+):
+    if session_id not in _sessions:
+        raise HTTPException(404, "Session not found or expired")
+
+    session = _sessions[session_id]
+    session["last_active"] = time.time()
+    session["history"].append({"role": "user", "content": message})
+
+    q: "queue.Queue" = queue.Queue()
+
+    # 轻量聊天只给只读工具：允许模型自己读仓库找答案，但不能悄悄改代码/跑命令。
+    _LIGHT_CHAT_TOOLS = {"list_files", "read_file", "search_code", "retrieve_context", "git_diff"}
+    _MAX_TOOL_ROUNDS = 4
+
+    def _worker():
+        from llm import create_local_llm_client
+        from main import _bound_task_description
+        from tools.tools import get_tool_map
+        from tools.specs import to_openai_tools
+        from core.state import AgentState, ToolResult
+
+        client = create_local_llm_client(
+            provider=llm_provider or "openai_compatible",
+            base_url=llm_base_url or None,
+            model=llm_model or "gpt-4o-mini",
+        )
+
+        all_tools = get_tool_map()
+        tools = {name: fn for name, fn in all_tools.items() if name in _LIGHT_CHAT_TOOLS}
+        tool_schema = to_openai_tools(list(tools.keys()))
+        fake_state = AgentState(input_query=message, repo_root=session["repo_root"])
+
+        bounded_message = _bound_task_description(message)
+        history_text = "\n".join(
+            f"{'User' if m['role']=='user' else 'Agent'}: {_bound_task_description(m['content'])}"
+            for m in session["history"][-8:]
+        )
+        messages: list[Dict[str, Any]] = [
+            {"role": "system", "content": (
+                "You are a grounded coding assistant answering questions about the repository "
+                "checked out at the current working directory. Use the available tools "
+                "(list_files, read_file, search_code, retrieve_context, git_diff) to inspect the "
+                "real code before answering — never guess. Once you have enough evidence, answer "
+                "directly in plain text without calling more tools."
+            )},
+            {"role": "user", "content": f"{history_text}\n\nUser: {bounded_message}"},
+        ]
+
+        full_reply = []
+        try:
+            for _ in range(_MAX_TOOL_ROUNDS):
+                response = client.chat(messages, tools=tool_schema)
+                raw_calls = response.get("tool_calls") if isinstance(response, dict) else None
+
+                if not raw_calls:
+                    for delta in client.chat_stream(messages):
+                        full_reply.append(delta)
+                        q.put_nowait({"delta": delta})
+                    break
+
+                call = raw_calls[0]
+                fn = call.get("function", {})
+                tool_name = fn.get("name")
+                try:
+                    arguments = json.loads(fn.get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    arguments = {}
+
+                tool_fn = tools.get(tool_name)
+                if tool_fn:
+                    result = tool_fn(state=fake_state, **arguments)
+                    result_text = result.to_text(max_chars=2000) if isinstance(result, ToolResult) else str(result)
+                else:
+                    result_text = f"Tool not available: {tool_name}"
+
+                messages.append({"role": "assistant", "content": response.get("content"), "tool_calls": [call]})
+                messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": result_text})
+            else:
+                # 工具轮数用完还没给出最终答案：强制来一轮不带 tools 的流式收尾。
+                for delta in client.chat_stream(messages):
+                    full_reply.append(delta)
+                    q.put_nowait({"delta": delta})
+        except Exception as exc:
+            q.put_nowait({"error": f"LLM unreachable ({type(exc).__name__}): {exc}"})
+        finally:
+            if full_reply:
+                session["history"].append({"role": "agent", "content": "".join(full_reply)})
+            q.put_nowait(None)
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+    async def event_generator():
+        while True:
+            try:
+                item = q.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.05)
+                continue
+            if item is None:
+                break
+            yield f"data: {json.dumps(item)}\n\n"
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 def _build_contextual_task(message: str, history: List[Dict[str, str]]) -> str:
     """Prepend recent conversation history so the agent has multi-turn context."""
@@ -145,6 +257,7 @@ def _agent_thread(
             trace_path=trace_path,
             run_id=run_id,
             step_callback=emit,
+            session_id=session_id,
         )
 
         _runs[run_id]["result"] = {
@@ -178,6 +291,7 @@ def _agent_thread(
             answer = result.get("final_answer", "")
             if answer:
                 _sessions[session_id]["history"].append({"role": "agent", "content": answer})
+                _sessions[session_id]["last_retrieved_context"] = answer
 
         # Only clean up workspace for one-shot runs (sessions manage their own lifecycle)
         if not session_id:

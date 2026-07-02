@@ -452,6 +452,22 @@ async function sendMessage(overrideText) {
 
   appendUserBubble(text);
 
+  if (needsFullAgentRun(text)) {
+    return sendAgentJob(text);
+  }
+  return sendLightChat(text);
+}
+
+// 需要改代码/跑测试这类任务才走完整 Planner/Executor 循环，
+// 其余（提问、追问、解释类）走下面的轻量流式聊天。
+function needsFullAgentRun(text) {
+  const kws = ['fix', 'implement', 'modify', 'change', 'update', 'patch',
+               'debug', 'solve', 'run test', 'add code', 'complete code'];
+  const lower = text.toLowerCase();
+  return kws.some(k => lower.includes(k));
+}
+
+async function sendAgentJob(text) {
   const form = new FormData();
   form.append('task', text);
   if (llmConfig.provider) form.append('llm_provider', llmConfig.provider);
@@ -501,6 +517,73 @@ async function sendMessage(overrideText) {
     setSendBtn(false);
     setStatus(false);
   };
+}
+
+// 轻量问答：单次 LLM 调用 + token 级流式，不进 Planner/Executor。
+async function sendLightChat(text) {
+  const thread = document.getElementById('chat-thread');
+  const wrapper = document.createElement('div');
+  wrapper.className = 'flex justify-start bubble-in';
+  wrapper.innerHTML = `
+    <div class="max-w-xl bg-white rounded-2xl rounded-tl-sm border border-gray-200 shadow-sm px-4 py-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed"></div>`;
+  thread.appendChild(wrapper);
+  const bubble = wrapper.firstElementChild;
+  bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+  setSendBtn(true);
+
+  try {
+    const form = new FormData();
+    form.append('message', text);
+    if (llmConfig.provider) form.append('llm_provider', llmConfig.provider);
+    if (llmConfig.baseUrl)  form.append('llm_base_url', llmConfig.baseUrl);
+    if (llmConfig.model)    form.append('llm_model', llmConfig.model);
+    const res = await fetch(`/api/session/${currentSessionId}/chat`, { method: 'POST', body: form });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Request failed'); }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let gotAnyDelta = false;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+
+      for (const part of parts) {
+        if (!part.startsWith('data: ')) continue;
+        const evt = JSON.parse(part.slice(6));
+        if (evt.delta) {
+          gotAnyDelta = true;
+          bubble.textContent += evt.delta;
+          bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+        if (evt.error) {
+          wrapper.remove();
+          appendErrorBubble(evt.error);
+          setSendBtn(false);
+          return;
+        }
+        if (evt.done) {
+          setSendBtn(false);
+          return;
+        }
+      }
+    }
+
+    if (!gotAnyDelta) {
+      wrapper.remove();
+      appendErrorBubble('No response received.');
+    }
+  } catch (e) {
+    wrapper.remove();
+    appendErrorBubble(e.message);
+  }
+
+  setSendBtn(false);
 }
 
 // ── End session ──

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 import time, json
 from pathlib import Path
+import hashlib
 
 from .state import ToolResult
 # short term will in tool results
@@ -34,6 +35,11 @@ class AgentMemory:
     - Previously discovered bugs
     - Useful implementation facts
     """
+    @staticmethod
+    def namespace_for(repo_root: str, session_id: Optional[str] = None):
+        if session_id:
+            return session_id
+        return hashlib.sha1(str(Path(repo_root).resolve()).encode()).hexdigest()[:12]
 
     def __init__(self, short_term_limit: int = 12, persist_dir: Optional[str] = None):
         self.short_term_limit = short_term_limit

@@ -50,3 +50,4 @@ node_modules/
 *.log
 trace.jsonl
 .agent_index/
+Agent.code-workspace

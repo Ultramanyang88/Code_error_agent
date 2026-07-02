@@ -309,6 +309,37 @@ TOOL_SPECS: Dict[str, Dict[str, Any]] = {
 def get_tool_specs() -> Dict[str, Dict[str, Any]]:
     return TOOL_SPECS
 
+def to_openai_tools(tool_names: List[str] | None=None) ->List[Dict[str, Any]]:
+    """
+    convert tool specs into open ai function-calling tool arrays
+    """
+    selected = TOOL_SPECS
+    if tool_names:
+        selected = {n: s for n, s in TOOL_SPECS.items() if n in tool_names}
+
+    tools = []
+    for name, spec in selected.items():
+        properties, required = {}, []
+        for p_name, p_spec in spec.get("parameters", {}).items():
+            properties[p_name] = {
+                "type": p_spec.get("type", "string"),
+                "description": p_spec.get("description", ""),
+            }
+            if p_spec.get("required"):
+                required.append(p_name)
+        tools.append({
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": spec.get("description", ""),
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required,
+                },
+            },
+        })
+    return tools
 
 def format_tool_specs_for_prompt(tool_names: List[str] | None = None) -> str:
     """

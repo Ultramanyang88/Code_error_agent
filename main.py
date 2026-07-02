@@ -33,6 +33,22 @@ def get_validation_status(state: AgentState) -> ValidationStatus:
     return ValidationStatus.FAILED
 
 
+MAX_TASK_CHARS = 6000  # keep pasted-in text bounded; it gets echoed into every single prompt
+
+
+def _bound_task_description(task_description: str) -> str:
+    if len(task_description) <= MAX_TASK_CHARS:
+        return task_description
+    dropped = len(task_description) - MAX_TASK_CHARS
+    return (
+        task_description[:MAX_TASK_CHARS]
+        + f"\n...[truncated {dropped} more characters]\n"
+        "Note: this input was too long to paste directly into the prompt. "
+        "If you need to analyze the full document, save it as a file in the repo "
+        "and use read_file/retrieve_context instead of relying on this pasted text."
+    )
+
+
 def run_agent(
     task_description: str,
     repo_root: str,
@@ -40,18 +56,20 @@ def run_agent(
     trace_path: Optional[str] = None,
     run_id: Optional[str] = None,
     step_callback=None,  # callable(event_type: str, data: dict)
+    session_id: Optional[str] = None,
 ) -> AgentState:
     run_id = run_id or str(uuid.uuid4())[:8]
     started_at = time.time()
 
     state = AgentState(
-        input_query=task_description,
+        input_query=_bound_task_description(task_description),
         repo_root=repo_root,
     )
     state.started_at = started_at
 
-    memory = AgentMemory(persist_dir=".agent_memory")
     tools = get_tool_map()
+    namespace = AgentMemory.namespace_for(repo_root, session_id)
+    memory = AgentMemory(persist_dir=str(Path(".agent_memory")/namespace))
 
     try:
         from agent_mcp.client import MCPToolClient
@@ -90,6 +108,23 @@ def run_agent(
         if current_step is None:
             state.run_status = RunStatus.COMPLETED
             state.final_answer = executor._build_final_answer(state)
+            break
+        
+        elapsed = time.time() - started_at
+        if elapsed >= state.budget.deadline_seconds:
+            state.run_status = RunStatus.FAILED
+            state.stop_reason = "deadline_exceeded"
+            state.final_answer = executor._build_final_answer(state)
+            if step_callback:
+                step_callback("abandoned", {"reason": "deadline_exceeded", "elapsed_s": round(elapsed, 1)})
+            break
+        
+        if len(state.tool_history) >= state.budget.max_tool_calls:
+            state.run_status = RunStatus.FAILED
+            state.stop_reason = "tool_call_limit_exceeded"
+            state.final_answer = executor._build_final_answer(state)
+            if step_callback:
+                step_callback("abandoned", {"reason": "tool_call_limit_exceeded"})
             break
 
         if step_callback:
@@ -131,6 +166,7 @@ def run_agent(
                 print("[!] Replan limit reached. Abandoning.")
                 state.run_status = RunStatus.FAILED
                 state.stop_reason = "replan_limit_exceeded"
+                state.final_answer = executor._build_final_answer(state)
                 if step_callback:
                     step_callback("abandoned", {"reason": "replan_limit_exceeded"})
                 break

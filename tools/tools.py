@@ -10,9 +10,13 @@ import sys
 import tempfile
 import textwrap
 
+from collections import OrderedDict
 from core.state import AgentState, ToolResult
 
 # tool list:list_files, read_file, search_code, retrieve_context, write_file, replace_in_file, apply_patch, run_command, run_tests, identify_error, git_diff
+
+_RAG_CACHE_MAX = 4
+_rag_engine_cache: "OrderedDict[str, Any]" = OrderedDict()
 
 IGNORED_DIRS = {
     ".git",
@@ -127,6 +131,27 @@ def _is_probably_text_file(path: Path) -> bool:
         return True
 
     return False
+
+
+def _get_rag_engine(repo_root: str, force_rebuild: bool = False):
+    from rag.retrieve import RAGEngine
+
+    key = str(Path(repo_root).resolve())
+
+    if force_rebuild:
+        _rag_engine_cache.pop(key, None)
+    
+    if key not in _rag_engine_cache:
+        if len(_rag_engine_cache) >= _RAG_CACHE_MAX:
+            _rag_engine_cache.popitem(last=False)
+        _rag_engine_cache[key] = RAGEngine(
+            repo_root=repo_root,
+            index_dir=".agent_index",
+            auto_load=True,
+        )
+    else:
+        _rag_engine_cache.move_to_end(key)
+    return _rag_engine_cache[key]
 
 
 def _read_text_file(path: Path) -> str:
@@ -864,13 +889,8 @@ def retrieve_context(
     Retrieve relevant repository context using FAISS-based RAG.
     """
     try:
-        from rag.retrieve import RAGEngine
 
-        engine = RAGEngine(
-            repo_root=state.repo_root,
-            index_dir=".agent_index",
-            auto_load=True,
-        )
+        engine = _get_rag_engine(state.repo_root, force_rebuild=force_rebuild)
 
         if force_rebuild:
             engine.rebuild()
