@@ -1,228 +1,233 @@
 # Code Error Agent
 
-An autonomous coding agent that finds and fixes bugs in Python repositories. Submit a GitHub URL or file, chat with the agent, and get grounded answers backed by the actual code — not hallucinations.
+Code Error Agent is an autonomous coding agent for working with real repositories. It can inspect code, plan a task, call tools, edit files, run tests, and revise its plan when validation fails.
 
-## How it works
+It supports more than bug fixing: project analysis, feature implementation, refactoring, test writing, dependency upgrades, and code review. You can use it from the CLI or through the FastAPI web UI.
 
-The agent runs a loop:
+## Summary
 
-1. **Planner** — sees the repo file listing before planning, generates a task-specific sequence of steps
-2. **Executor** — runs each step via tool calls; logs each tool invocation and result to the terminal
-3. **Skill registry** — dispatches known task patterns (e.g. "what does this project do") to hand-written playbooks before falling back to the LLM planner
-4. **Validator** — checks test results; if tests fail the planner replans (capped at `max_replans`)
+The agent follows a simple loop:
 
-RAG layer: FAISS + sentence-transformers for hybrid (vector + keyword) recall, cross-encoder reranking, relevance floor (results below score −4.0 are discarded). The knowledge base includes synthetic chunks for tool specs and skill playbooks so the planner can look up how to use tools. README and documentation files get boosted scoring for overview queries.
+1. Classify the user request and create a task-specific plan.
+2. Retrieve relevant project context with file search and RAG.
+3. Execute each step with built-in tools or MCP tools.
+4. Validate changes with tests or command output.
+5. Replan when validation fails, up to the configured budget.
 
-MCP server exposes all built-in tools over stdio for external orchestration.
+Main features:
 
-## Project layout
+- CLI runner in `main.py`.
+- FastAPI backend and browser chat UI in `api/`.
+- Built-in tools for reading files, searching code, applying patches, running commands/tests, and checking diffs.
+- RAG layer using FAISS and sentence-transformers.
+- Skill playbooks in `skills/` for common coding tasks.
+- MCP support for both exposing this project as a tool server and consuming external MCP servers.
+- Optional Postgres, Redis/RQ, and Docker sandbox support.
 
-```
+## Architecture
+
+```text
+main.py
+  CLI entry point. Creates the agent state, loads tools/MCP servers, and runs the planner-executor loop.
+
 core/
-  state.py      — AgentState, AgentBudget, PlanStep, ToolResult
-  planner.py    — LLM planner (with repo listing in prompt) + deterministic fallback
-  executor.py   — step runner, tool dispatch, schema validation, grounded final summary
-  memory.py     — short-term (recent results) + long-term (JSONL insights)
+  state.py           Agent state, plan steps, tool results, budgets, run status
+  planner.py         LLM planner plus rule-based fallback planner
+  executor.py        Executes plan steps through tools and builds the final answer
+  memory.py          Session and long-term agent memory
+  logging_setup.py   Structured JSONL logging
 
 tools/
-  tools.py      — list_files, read_file, search_code, write_file,
-                  replace_in_file, apply_patch, run_command, run_tests,
-                  identify_error, git_diff, retrieve_context
-  specs.py      — JSON schema definitions for all tools
+  tools.py           Built-in tool implementations
+  specs.py           Tool schemas and categories
+  registry.py        Combines built-in and MCP tool metadata for the planner
 
 rag/
-  indexer.py    — AST-based chunker + FAISS index builder (injects tool + skill chunks)
-  retrieve.py   — hybrid vector + keyword search, cross-encoder rerank, relevance floor
-  embedder.py   — sentence-transformers wrapper
+  indexer.py         Code chunking and FAISS index building
+  retrieve.py        Hybrid vector/keyword retrieval and reranking
+  federated.py       Combines code retrieval with agent memory
 
 skills/
-  registry.py           — loads .md skill files, keyword-based dispatch
-  fix_import_error.md
-  debug_test_failure.md
-  summarize_project.md  — read README → pyproject.toml → entry point, in order
+  *.md               Task playbooks for bugs, features, refactors, tests, upgrades, etc.
+  registry.py        Loads skills and matches them by trigger keywords
 
 agent_mcp/
-  server.py     — MCP server exposing all built-in tools over stdio
-  client.py     — MCP client wrapping external tool servers
+  server.py          Exposes built-in tools/resources/prompts as an MCP server
+  client.py          Connects to external MCP servers
+  config.py          Loads mcp_servers.json or MCP_SERVERS_CONFIG
 
 api/
-  server.py     — FastAPI backend; session-based multi-turn chat
-  static/
-    index.html  — Chat UI (session per repo, conversation thread, live log stream)
+  server.py          FastAPI app, sessions, runs, SSE streaming, history endpoints
+  static/index.html  Browser chat UI
+
+db/
+  schema.sql         Postgres schema
+  store.py           Optional Postgres persistence
+  cache.py           Optional Redis TTL/pub-sub support
+  queue.py           Optional RQ task queue
+
+sandbox/
+  docker_sandbox.py  Optional Docker execution sandbox
+  Dockerfile         Sandbox image
 
 testcase/
-  test_all.py   — Full test suite (106 tests, no server required)
-  run_eval.py   — Eval harness over task_00x_* bug scenarios
-  tasks/        — Three eval tasks: division-by-zero, operator bug, import error
-  judge.py      — LLM-as-judge scoring via gpt-4o-mini
-
-main.py         — CLI entry point
-llm.py          — LLM client (OpenAI-compatible or Ollama, reads OPENAI_API_KEY)
+  test_*.py          Tests and integration checks
+  run_eval.py        Evaluation runner
 ```
 
-## Quickstart
+## Setup
+
+Create a virtual environment and install dependencies:
 
 ```bash
-# 1. Set up environment
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-
-# 2. Run in fallback mode (no LLM — rule-based planner)
-python main.py
-
-# 3. Run with OpenAI
-OPENAI_API_KEY=sk-... python main.py --llm --provider openai_compatible \
-  --base-url https://api.openai.com/v1 --model gpt-4o-mini
-
-# 4. Run with a local LLM (Ollama)
-ollama pull qwen2.5-coder:7b
-python main.py --llm --provider ollama --model qwen2.5-coder:7b
-
-# 5. Start the web UI (chat interface)
-OPENAI_API_KEY=sk-... python api/server.py
-open http://localhost:8080
 ```
 
-## Chat UI
+Create local environment config:
 
-The web interface is session-based — the repo is cloned once per session, and you can send follow-up messages without re-cloning.
+```bash
+cp .env.example .env
+```
 
-Flow:
-1. Paste a GitHub URL (or upload a `.py`/`.zip` file) and optionally write a first message
-2. Configure LLM provider in the accordion (or leave as "Fallback")
-3. Click **Start session** — the agent runs and streams progress to the log panel
-4. Each agent response appears as a result card in the conversation thread
-5. Type follow-up questions in the input box at the bottom
-6. Click **New session** in the header to start over with a different repo
+Then edit `.env` as needed. For OpenAI-compatible models, set:
+
+```env
+OPENAI_API_KEY=sk-...
+```
+
+## Run From CLI
+
+Fallback mode, without an LLM:
+
+```bash
+python main.py
+```
+
+OpenAI-compatible mode:
+
+```bash
+python main.py --llm \
+  --provider openai_compatible \
+  --base-url https://api.openai.com/v1 \
+  --model gpt-4o-mini \
+  --task "Analyze this repository and summarize its architecture"
+```
+
+Ollama mode:
+
+```bash
+ollama pull qwen2.5-coder:7b
+python main.py --llm --provider ollama --model qwen2.5-coder:7b
+```
+
+## Run The Web UI
+
+Start the API server:
+
+```bash
+python api/server.py
+```
+
+Open:
+
+```text
+http://localhost:8080
+```
+
+The UI lets you start a session from a GitHub URL or uploaded `.py`/`.zip` file, chat with the agent, and stream execution logs.
+
+## Run The Full Local Stack
+
+This starts Postgres, Redis, the optional Docker sandbox, an RQ worker, and the API server.
+
+Requirements:
+
+- Docker running
+- Python virtual environment created
+- Dependencies installed
+- `.env` configured if you want LLM access
+
+Run:
+
+```bash
+./scripts/dev-up.sh
+```
+
+Useful options:
+
+```bash
+./scripts/dev-up.sh --no-queue
+./scripts/dev-up.sh --no-sandbox
+```
+
+Stop the API server and worker with `Ctrl+C`. Stop Postgres/Redis separately:
+
+```bash
+docker compose down
+```
+
+## Optional Services
+
+Postgres and Redis:
+
+```bash
+docker compose up -d postgres redis
+export DATABASE_URL="postgresql://agent:agent_dev_password@localhost:5432/agent"
+export REDIS_URL="redis://localhost:6379/0"
+python api/server.py
+```
+
+RQ worker:
+
+```bash
+export REDIS_URL="redis://localhost:6379/0"
+export AGENT_QUEUE_ENABLED=1
+rq worker agent-runs --worker-class rq.worker.SimpleWorker
+```
+
+Docker sandbox:
+
+```bash
+docker build -t agent-sandbox:latest sandbox/
+export AGENT_SANDBOX_ENABLED=1
+python api/server.py
+```
 
 ## Tests
 
 ```bash
-# Full unit test suite (106 tests, no server or LLM needed)
 python -m pytest testcase/test_all.py -v
-
-# Tool smoke test
 python testcase/test_tools.py
-
-# RAG smoke test
 python testcase/test_rag.py
 ```
 
-## API
-
-Server runs at `http://localhost:8080`.
-
-### Session endpoints (multi-turn)
+Optional integration tests:
 
 ```bash
-# Create a session (clone repo once)
-curl -X POST http://localhost:8080/api/session \
-  -F "repo_url=https://github.com/you/repo"
+DATABASE_URL="postgresql://agent:agent_dev_password@localhost:5432/agent" \
+  python -m pytest testcase/test_db_store.py -v
 
-# → {"session_id": "a1b2c3d4", "repo_label": "https://..."}
+python -m pytest testcase/test_sandbox.py -v
 
-# Send a message in the session
-curl -X POST http://localhost:8080/api/session/a1b2c3d4/message \
-  -F "task=What does this project do?" \
-  -F "llm_provider=openai_compatible" \
-  -F "llm_base_url=https://api.openai.com/v1" \
-  -F "llm_model=gpt-4o-mini"
-
-# → {"run_id": "b5c6d7e8"}
-
-# Close a session and clean up workspace
-curl -X DELETE http://localhost:8080/api/session/a1b2c3d4
+REDIS_URL="redis://localhost:6379/0" \
+  python -m pytest testcase/test_cache_queue.py -v
 ```
-
-### Run endpoints (one-shot)
-
-```bash
-# Start a one-shot run (no session, workspace cleaned up after 5 min)
-curl -X POST http://localhost:8080/api/run \
-  -F "repo_url=https://github.com/you/repo" \
-  -F "task=Fix the divide-by-zero bug"
-
-# Stream live log (SSE)
-curl -N http://localhost:8080/api/run/b5c6d7e8/stream
-
-# Poll run result
-curl http://localhost:8080/api/run/b5c6d7e8
-```
-
-### History / delete (PostgreSQL — not active by default)
-
-```bash
-curl http://localhost:8080/api/history?limit=20
-curl -X DELETE http://localhost:8080/api/run/b5c6d7e8
-```
-
-## Evaluation
-
-```bash
-# Run all three eval tasks
-python testcase/run_eval.py
-
-# With LLM judge (gpt-4o-mini scoring)
-OPENAI_API_KEY=sk-... python testcase/run_eval.py --judge
-
-# Save / compare regression baseline
-python testcase/run_eval.py --save-baseline
-python testcase/run_eval.py --compare-baseline
-```
-
-## PostgreSQL (optional)
-
-By default, runs are stored in memory and sessions are cleaned up after 30 min of inactivity. To persist history:
-
-1. Create the table:
-```sql
-CREATE TABLE runs (
-    run_id      TEXT PRIMARY KEY,
-    task        TEXT,
-    repo_url    TEXT,
-    status      TEXT,
-    result      JSONB,
-    created_at  TIMESTAMPTZ DEFAULT now(),
-    finished_at TIMESTAMPTZ
-);
-```
-
-2. Install the driver and set the DSN:
-```bash
-pip install asyncpg
-export DATABASE_URL="postgresql://user:pass@localhost:5432/agent"
-```
-
-3. Uncomment the `# ── [DB PLACEHOLDER]` block in [api/server.py](api/server.py).
-
-## Adding a skill
-
-Create `skills/your_skill.md`:
-
-```markdown
----
-name: your_skill
-trigger_keywords: [keyword1, keyword2]
-summary: One sentence describing what this skill does.
----
-
-## Procedure
-1. Step one (include which tool to use).
-2. Step two.
-```
-
-Skills are picked up automatically. Trigger keywords are matched against the current step task and recent error messages before the LLM planner is called.
 
 ## Configuration
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--llm` | off | Enable LLM mode |
-| `--provider` | `openai_compatible` | `openai_compatible` or `ollama` |
-| `--base-url` | `http://localhost:8000` | LLM API base URL |
-| `--model` | `qwen2.5-coder:7b` | Model name |
-| `--task` | repo analysis | Task description |
+Common environment variables:
 
-`OPENAI_API_KEY` is read automatically from the environment when using the `openai_compatible` provider.
+| Variable | Description |
+|---|---|
+| `OPENAI_API_KEY` | API key for OpenAI-compatible providers |
+| `DATABASE_URL` | Optional Postgres DSN |
+| `REDIS_URL` | Optional Redis URL |
+| `AGENT_QUEUE_ENABLED` | Enable RQ when set to `1`, `true`, or `yes` |
+| `AGENT_SANDBOX_ENABLED` | Enable Docker sandbox when set to `1`, `true`, or `yes` |
+| `MCP_SERVERS_CONFIG` | Path to a custom MCP server config file |
+| `AGENT_LOG_DIR` | Directory for JSONL logs |
+| `AGENT_LOG_LEVEL` | Log level |
 
-Budget defaults (`core/state.py`): 8 plan steps, 30 tool calls, 6 replans, 600 s deadline.
+See `mcp_servers.json.example` for MCP configuration examples.
