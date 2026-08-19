@@ -3,12 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable
 import fnmatch
-import os
 import re
 import subprocess
 import sys
-import tempfile
-import textwrap
 
 from collections import OrderedDict
 from core.state import AgentState, ToolResult

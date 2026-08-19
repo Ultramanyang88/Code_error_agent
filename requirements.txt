@@ -13,7 +13,12 @@ uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
 
 # MCP
-mcp>=1.0.0
+# Capped below 2.0: mcp 2.0.0 removed the low-level Server decorator API
+# (list_tools/call_tool/list_resources/read_resource/list_prompts/get_prompt)
+# that agent_mcp/server.py is built on, in favor of a different
+# add_request_handler-based design. Migrating is real work, not a quick pin
+# bump -- until that migration happens, stay on the 1.x line.
+mcp>=1.0.0,<2.0.0
 
 # LLM judge (eval harness)
 openai>=1.30.0

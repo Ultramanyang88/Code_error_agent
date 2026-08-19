@@ -155,7 +155,7 @@ def run_task(
         except ImportError:
             from judge import run_judge
 
-        print(f"[Judge] Running LLM evaluation...")
+        print("[Judge] Running LLM evaluation...")
         verdict = run_judge(
             task_description=description,
             expected_outcome=meta,
@@ -237,7 +237,7 @@ def _print_summary(results: List[Dict[str, Any]]) -> None:
         print(fmt.format(*row))
 
     if any("judge" in r for r in results):
-        print(f"\nJudge scores:")
+        print("\nJudge scores:")
         for r in results:
             v = r.get("judge", {})
             if v and not v.get("skipped"):
