@@ -1,21 +1,16 @@
-from __future__ import annotations
-
 """
-Unified view over "what tools exist and what category is each one in",
-merging the static built-in taxonomy (specs.py's TOOL_SPECS/TOOL_CATEGORIES)
-with categories declared for dynamically-discovered MCP tools
-(agent_mcp/config.py's MCPServerConfig.category / tool_categories).
-
-Why this exists: without it, MCP tools are invisible to the category system
-built for the 11 built-in tools -- category_of("mcp_fs__read_file") returns
-None from specs.py alone, so an MCP tool never gets pulled in by
+Unified view of "what tools exist and what category is each in", merging
+the static built-in taxonomy (specs.py's TOOL_SPECS/TOOL_CATEGORIES) with
+categories declared for dynamically-discovered MCP tools
+(agent_mcp/config.py's MCPServerConfig.category/tool_categories) -- without
+this, an MCP tool like "mcp_fs__read_file" is invisible to
 expand_by_category() and the planner has no compact way to reason about it.
-ToolRegistry merges both worlds so a step routed to "inspection" pulls in
-both read_file (built-in) and mcp_fs__read_file (MCP), and gives the planner
-a category-level summary (a handful of lines) instead of one line per tool --
-which is what keeps its prompt size roughly constant no matter how many MCP
-servers/tools end up registered.
+Also gives the planner a category-level summary instead of one line per
+tool, keeping prompt size roughly constant regardless of how many MCP
+servers/tools get registered.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
@@ -45,16 +40,13 @@ class ToolRegistry:
 
     def expand_by_category(self, seed: List[str]) -> List[str]:
         """
-        Given a seed list from a plan step's suggested_tools, return concrete
-        tool names -- expanding to every registered tool sharing a category
-        with the seed. The seed may mix concrete tool names ("write_file")
-        and/or bare category names ("mutation"): the planner only ever sees
-        category-level summaries (see category_summary_prompt()), so it's
-        expected to sometimes name a category directly rather than guess at
-        exact tool names it's never individually seen (especially MCP ones).
-
-        Falls back to the seed list unchanged if none of it maps to a known
-        category or tool.
+        Expand a plan step's suggested_tools seed into concrete tool names,
+        pulling in every tool that shares a category with the seed. The seed
+        may mix concrete names ("write_file") and bare category names
+        ("mutation") -- the planner only sees category-level summaries (see
+        category_summary_prompt()), so it's expected to name a category
+        directly rather than guess at tools it's never individually seen.
+        Falls back to the seed unchanged if none of it maps to anything known.
         """
         category_names = set(self.all_category_purpose().keys())
         categories: set = set()

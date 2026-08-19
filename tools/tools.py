@@ -17,16 +17,14 @@ import uuid
 
 def _exec_command(root: Path, command: str, timeout: int) -> "tuple[int, str, str]":
     """
-    Run `command` with cwd=root: inside this repo's persistent, network-
+    Run `command` with cwd=root: inside the repo's persistent, network-
     disabled sandbox container when $AGENT_SANDBOX_ENABLED is set and Docker
-    is reachable (see sandbox/docker_sandbox.py), otherwise directly on the
-    host. Falls back to host execution on any sandbox error rather than
-    failing the call -- sandboxing is a hardening layer, not something a
-    Docker hiccup should be able to take the whole tool down over.
+    is reachable, otherwise directly on the host. Falls back to host
+    execution on any sandbox error -- sandboxing is a hardening layer, not
+    something a Docker hiccup should take the whole tool down over.
 
     Returns (exit_code, stdout, stderr). Raises subprocess.TimeoutExpired
-    only on the host-execution path (the sandbox path reports timeouts as a
-    (-1, "", message) result instead of raising).
+    only on the host path (sandbox path reports timeouts as (-1, "", msg)).
     """
     from sandbox.docker_sandbox import is_sandbox_enabled, is_docker_available
 
@@ -762,14 +760,11 @@ def run_tests(
     """
     Run pytest if tests exist; otherwise run Python syntax compilation.
 
-    NOTE on sandboxed runs: the sandbox image only bakes in pytest itself
-    (see sandbox/Dockerfile) -- it cannot pre-install every target repo's own
-    dependencies without network access, which the sandbox deliberately
-    doesn't have. A repo whose tests need packages beyond the stdlib will
-    fail with ModuleNotFoundError inside the sandbox even though the same
-    command would work on a host that already has them installed. That's a
-    real, known trade-off of --network none, not a bug to silently work
-    around by re-enabling network for run_command.
+    Sandboxed runs only have pytest itself pre-installed (see
+    sandbox/Dockerfile) -- no network to pull a target repo's own deps, so
+    tests needing packages beyond the stdlib fail with ModuleNotFoundError
+    there even though the same command works on a host with them installed.
+    Known trade-off of --network none, not a bug to work around.
     """
     root = Path(state.repo_root).resolve()
     python = _python_command()
@@ -788,15 +783,10 @@ def run_tests(
     elif testcase_dir.exists():
         command = f"{python} -m pytest testcase"
     else:
-        # No conventional tests/ or testcase/ folder doesn't mean there are
-        # no tests -- pytest's own discovery finds test_*.py/*_test.py
-        # anywhere in the tree, including flat next to the module under test
-        # (a common layout for small repos/eval fixtures). Try that FIRST;
-        # only degrade to a bare syntax check if pytest genuinely found
-        # nothing to run (exit code 5 = "no tests collected", not a failure).
-        # Skipping straight to compileall here used to mean run_tests could
-        # report PASSED without ever executing a single real test assertion
-        # against a repo laid out exactly like that.
+        # No tests/ or testcase/ folder doesn't mean no tests -- pytest's own
+        # discovery finds test_*.py anywhere, including flat layouts (common
+        # for small repos/eval fixtures). Probe first; only degrade to a
+        # syntax-only check if pytest genuinely found nothing (exit code 5).
         probe_code, probe_out, probe_err = _exec_command(root, f"{python} -m pytest . --collect-only -q", 30)
         if probe_code == 5 or "no tests ran" in (probe_out + probe_err).lower():
             command = f"{python} -m compileall ."

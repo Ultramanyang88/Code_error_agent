@@ -1,10 +1,6 @@
-# Infra for the persistence layer: Postgres for durable records (sessions,
-# messages, run history), Redis for ephemeral/fast state (SSE event
-# pub/sub across workers, session activity TTLs, task queue broker later).
-#
-# This only stands up the two services — api/server.py does not read/write
-# them yet. See db/schema.sql for the intended table shapes and the mapping
-# from the current in-memory _sessions/_runs dicts.
+# Postgres for durable records (sessions/messages/run history, see
+# db/schema.sql), Redis for ephemeral state (SSE pub/sub, session TTLs,
+# task queue broker).
 #
 # Usage:
 #   docker compose up -d

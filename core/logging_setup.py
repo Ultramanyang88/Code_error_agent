@@ -1,22 +1,14 @@
+"""
+Structured (JSON-lines) logging for the agent's operational events --
+separate from the human-facing `print()` narration in core/executor.py,
+main.py, etc. (that's CLI UX, left alone). Every call site logs through
+`log_event()` with a stable set of fields, so swapping the output sink
+(file -> stdout -> OTel exporter) is a change to this module only.
+
+Env vars: AGENT_LOG_DIR (default "logs"), AGENT_LOG_LEVEL (default "INFO").
+"""
+
 from __future__ import annotations
-
-"""
-Structured (JSON-lines) logging for the agent's operational events.
-
-This is deliberately separate from the human-facing `print()` narration
-scattered through core/executor.py, main.py, etc. Those prints are a CLI UX
-choice (a person watching a terminal) and are left alone. This module is for
-machine-readable events — one JSON object per line — meant to be tailed,
-grepped, or shipped to a log aggregator later without re-instrumenting
-anything: every call site logs through `log_event()` with a stable set of
-fields, so swapping the output sink (file -> stdout -> OTel exporter) is a
-change to this module only.
-
-Env vars:
-    AGENT_LOG_DIR   directory for the rotating JSON-lines log file
-                    (default: "logs" under the current working directory)
-    AGENT_LOG_LEVEL default "INFO"
-"""
 
 import json
 import logging

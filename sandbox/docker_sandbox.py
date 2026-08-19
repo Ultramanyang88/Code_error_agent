@@ -1,43 +1,27 @@
+"""
+Docker-based execution sandbox for the operations that need real isolation:
+run_command, run_tests, apply_patch, and git clone. Everything else
+(list_files/read_file/search_code/retrieve_context) stays a direct,
+path-validated, read-only host filesystem read -- no isolation benefit to
+shelling those into a container.
+
+Design: one persistent, --network none container per repo_root ("session
+sandbox"), exec'd into repeatedly and stopped when the session ends -- an
+LLM-issued run_command can't reach the network regardless of what
+tools.py's DANGEROUS_COMMAND_PATTERNS denylist did or didn't catch. git
+clone is the one op that legitimately needs network and is human- (not
+LLM-) initiated, so it gets its own ephemeral, network-enabled container
+(run_ephemeral()) instead of loosening the session sandbox's policy.
+Resource limits + a non-root user (see Dockerfile) on every container.
+
+This is a denylist-free boundary: the guarantee isn't "we blocked the
+dangerous command", it's "even one we failed to block only affects this
+container". Opt-in via $AGENT_SANDBOX_ENABLED=1; falls back to direct host
+execution when unset or Docker isn't reachable (see tools/tools.py and
+api/server.py's _clone_repo).
+"""
+
 from __future__ import annotations
-
-"""
-Docker-based execution sandbox, covering the four operations flagged as
-needing isolation: run_command, run_tests (delegates to run_command),
-apply_patch, and git clone. Everything else (list_files/read_file/
-search_code/retrieve_context) stays a direct host filesystem read -- the
-repo is bind-mounted into the container, those tools are already
-path-validated and read-only, and shelling into a container for every single
-file read would add ~50-200ms of docker-exec overhead per call for no real
-safety gain.
-
-Design (see the conversation's threat-model writeup for the full reasoning):
-  - One persistent container per repo_root ("session sandbox"), created on
-    first use and kept alive for the session's lifetime -- run_command/
-    run_tests/apply_patch all exec into it. Same lifecycle shape as
-    agent_mcp/client.py's persistent MCP connections: start() once, exec()
-    many times, stop() when the session ends.
-  - --network none on the session sandbox: an LLM-issued run_command can't
-    exfiltrate data or pull/execute anything from the network, regardless of
-    what tools.py's DANGEROUS_COMMAND_PATTERNS denylist did or didn't catch.
-  - git clone is the one operation that legitimately needs network, and it's
-    human-initiated (a URL typed into the web form) rather than LLM-decided,
-    so it runs in a SEPARATE, ephemeral (--rm), network-enabled container
-    (run_ephemeral()) instead of loosening the persistent session sandbox's
-    network policy for its entire lifetime just because of one clone step.
-  - Resource limits (memory/cpus/pids) and a non-root user (baked into the
-    image -- see Dockerfile) on every container.
-
-This is a denylist-free boundary, unlike DANGEROUS_COMMAND_PATTERNS: the
-guarantee isn't "we blocked the dangerous command", it's "even a command we
-failed to block can only affect this container's filesystem/resources".
-
-Everything here degrades gracefully: is_sandbox_enabled() defaults to False
-(opt-in via $AGENT_SANDBOX_ENABLED=1) and callers are expected to fall back
-to direct host execution if Docker isn't reachable -- see tools/tools.py and
-api/server.py's _clone_repo for the fallback wiring. This keeps the "works
-with zero setup" property every other optional integration in this project
-(Postgres, MCP) already has.
-"""
 
 import atexit
 import hashlib

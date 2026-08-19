@@ -1,23 +1,19 @@
-from __future__ import annotations
-
 """
 Postgres persistence for sessions/messages/runs (see db/schema.sql).
 
-Optional and best-effort: api/server.py keeps its in-memory _sessions/_runs
-dicts as the source of truth for the live request/SSE hot path; every
-function here is an additional write-through for durability (survives a
-restart, powers a future history sidebar) that never raises -- a DB hiccup
-degrades to "this write didn't persist" instead of "the request failed".
-Nothing here activates unless $DATABASE_URL is set and reachable, so the app
-still runs with zero setup exactly like before.
+Optional and best-effort: api/server.py's in-memory _sessions/_runs dicts
+stay the source of truth for the live request/SSE hot path; every function
+here is an additional write-through for durability that never raises -- a
+DB hiccup means "this write didn't persist", not "the request failed".
+Inactive unless $DATABASE_URL is set and reachable.
 
-Uses psycopg3's sync ConnectionPool everywhere (not asyncpg) on purpose:
-api/server.py's agent runs execute in background OS threads
-(threading.Thread, not asyncio tasks -- see _agent_thread), so one sync
-client that also works from async routes via asyncio.to_thread is simpler
-than juggling two different DB client types for what's a handful of small,
-infrequent metadata writes -- not a hot loop that needs async I/O to scale.
+Uses psycopg3's sync ConnectionPool, not asyncpg: agent runs execute in
+background threads (not asyncio tasks), so one sync client reachable from
+async routes via asyncio.to_thread is simpler than two DB client types for
+what's a handful of small, infrequent metadata writes.
 """
+
+from __future__ import annotations
 
 import json
 import os

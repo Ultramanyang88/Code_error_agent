@@ -8,19 +8,8 @@ import requests
 
 class LLMClient:
     """
-    Generic LLM client.
-
-    Supports two common local API styles:
-
-    1. OpenAI-compatible API:
-       POST /v1/chat/completions
-
-    2. Ollama native API:
-       POST /api/chat
-
-    You can switch using provider:
-    - provider="openai_compatible"
-    - provider="ollama"
+    Generic LLM client. Supports two API styles via `provider`:
+    "openai_compatible" (POST /v1/chat/completions) and "ollama" (POST /api/chat).
     """
 
     def __init__(

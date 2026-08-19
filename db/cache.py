@@ -1,24 +1,20 @@
-from __future__ import annotations
-
 """
-Redis wiring: a shared connection, session-activity TTL (replaces the
+Redis wiring: a shared connection, session-activity TTL (replaces the old
 poll-every-300s watchdog thread), and pub/sub for SSE run events.
 
-The pub/sub layer exists specifically for db/queue.py's RQ integration: once
-an agent run executes in a separate `rq worker` OS process instead of a
-background thread inside the FastAPI process, a plain in-process
-queue.Queue can't carry its progress events across that process boundary --
-Redis pub/sub can. api/server.py's emit() publishes here when Redis is
-configured; a small relay thread in the FastAPI process re-forwards those
-messages into the existing local queue.Queue that SSE streaming already
-polls, so stream_run()'s code doesn't need to know or care whether the run
-is executing in-process or in a worker.
+Pub/sub exists for db/queue.py's RQ integration: an agent run in a separate
+`rq worker` process can't share the FastAPI process's in-memory
+queue.Queue, so it publishes progress here instead, and a relay thread
+forwards those messages into the local queue.Queue that SSE streaming
+already polls -- stream_run() doesn't need to know whether the run is
+in-process or in a worker.
 
-Optional and best-effort, same shape as db/store.py: everything degrades to
-a no-op / None if $REDIS_URL isn't set or unreachable, so the app keeps
-working exactly as before (thread-based watchdog, in-process queue) with
+Optional and best-effort, same shape as db/store.py: degrades to a no-op /
+None if $REDIS_URL isn't set or unreachable, so the app keeps working with
 zero configuration.
 """
+
+from __future__ import annotations
 
 import json
 import os
@@ -118,24 +114,16 @@ def publish_event(run_id: str, event: Dict[str, Any]) -> None:
 
 def open_subscription(run_id: str, timeout: float = 5.0):
     """
-    Subscribe to run_id's event channel and block until Redis has actually
-    confirmed the subscription, returning the raw pubsub handle (or None if
-    Redis isn't available).
+    Subscribe to run_id's event channel and block until Redis confirms the
+    subscription. Returns the raw pubsub handle, or None if unavailable.
 
-    Call this BEFORE doing anything that might publish to the channel (e.g.
-    enqueuing the job whose events you're about to consume). Redis pub/sub
-    has no backlog/replay -- a publish that happens before a subscriber's
-    SUBSCRIBE has been acked by the server is simply never delivered to that
-    subscriber. `pubsub.subscribe(...)` alone only sends the command; it
-    doesn't wait for the server's ack, so a publisher racing right behind it
-    (e.g. an RQ worker that dequeues and finishes a fast job in milliseconds)
-    can complete -- including publishing the terminal "run_result" event --
-    before the subscription is actually live. Whoever's waiting on that
-    event then blocks forever with no error, which is a much worse failure
-    mode than a normal exception. Consuming one `get_message()` here forces
-    that ack (redis-py's documented way to synchronize on it) before this
-    function returns, so a publish issued by the caller right after this
-    call is guaranteed to be seen. Pair with iter_subscription() to consume it.
+    Call this BEFORE anything that might publish to the channel (e.g.
+    enqueuing the job you're about to consume events from). Redis pub/sub
+    has no backlog -- a publish issued before the SUBSCRIBE is acked is
+    dropped, and a fast worker can publish everything (including the
+    terminal run_result) before a naive subscribe-then-listen catches up,
+    hanging the reader forever with no error. Consuming one get_message()
+    here forces that ack first. Pair with iter_subscription() to consume.
     """
     if not available():
         return None
@@ -148,19 +136,14 @@ def open_subscription(run_id: str, timeout: float = 5.0):
 def iter_subscription(pubsub) -> Iterator[Dict[str, Any]]:
     """
     Consume an already-subscribed pubsub handle (see open_subscription()).
-    Yields decoded event dicts as they're published, and stops (returns)
-    right after an event of type "run_result" -- api/server.py's
-    _execute_agent_run() always publishes exactly one of these, from its
-    `finally` block, as the last thing it does, regardless of whether the run
-    succeeded, failed, or hit a budget limit. Callers don't need a separate
-    sentinel value; the generator ending IS the signal. Closes `pubsub` on
-    the way out either way (normal completion or the caller breaking early).
+    Yields events as published, stops right after a "run_result" event
+    (api/server.py's _execute_agent_run() always publishes exactly one, from
+    its `finally` block, win or lose), and closes `pubsub` either way.
 
-    Known gap: if the worker process is killed hard enough that even the
-    `finally` block never runs (not a Python exception, an actual process
-    kill), this blocks forever with no timeout. Not solved here -- same
-    class of problem as the "crashed run stays stuck in Postgres" gap noted
-    in db/cleanup.sql; deferred for the same reason (no immediate impact).
+    Known gap: if the worker is killed hard enough that even `finally`
+    never runs, this blocks forever with no timeout -- same class of issue
+    as db/cleanup.sql's "crashed run stays stuck" gap, deferred for the
+    same reason.
     """
     try:
         for message in pubsub.listen():
@@ -185,13 +168,10 @@ def subscribe_events(run_id: str) -> Iterator[Dict[str, Any]]:
     Convenience wrapper: subscribe-then-consume in one call. Blocking
     generator -- call from a dedicated thread, not the asyncio event loop.
 
-    Only safe to use when nothing can publish to this channel until after
-    the caller starts iterating (e.g. tests that subscribe first and publish
-    from a separate thread afterwards). If you're about to trigger the
-    publisher yourself (like enqueuing the job), call open_subscription()
-    first and enqueue only after it returns -- see that function's docstring
-    for why, and _dispatch_agent_run() in api/server.py for the real caller
-    that needs this ordering.
+    Only safe when nothing can publish on this channel until the caller
+    starts iterating. If you're about to trigger the publisher yourself
+    (e.g. enqueuing a job), call open_subscription() first instead and
+    enqueue only after it returns -- see its docstring for why.
     """
     pubsub = open_subscription(run_id)
     if pubsub is None:

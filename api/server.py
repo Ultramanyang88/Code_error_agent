@@ -207,36 +207,6 @@ def _build_contextual_task(message: str, history: List[Dict[str, str]]) -> str:
         lines.append(f"[{role}]: {m['content']}")
     return "Conversation history:\n" + "\n".join(lines) + f"\n\n[User]: {message}"
 
-# ── [DB PLACEHOLDER] ──────────────────────────────────────────────────────────
-# PostgreSQL connection pool.
-# Uncomment and configure when ready to persist run history.
-#
-# import asyncpg
-# DB_DSN = os.environ.get("DATABASE_URL", "postgresql://user:pass@localhost:5432/agent")
-# _db_pool: Optional[asyncpg.Pool] = None
-#
-# @app.on_event("startup")
-# async def startup():
-#     global _db_pool
-#     _db_pool = await asyncpg.create_pool(DB_DSN, min_size=2, max_size=10)
-#
-# @app.on_event("shutdown")
-# async def shutdown():
-#     if _db_pool:
-#         await _db_pool.close()
-#
-# Schema (run once):
-#   CREATE TABLE runs (
-#       run_id      TEXT PRIMARY KEY,
-#       task        TEXT,
-#       repo_url    TEXT,
-#       status      TEXT,
-#       result      JSONB,
-#       created_at  TIMESTAMPTZ DEFAULT now(),
-#       finished_at TIMESTAMPTZ
-#   );
-# ─────────────────────────────────────────────────────────────────────────────
-
 
 # ── workspace helpers ─────────────────────────────────────────────────────────
 
@@ -316,19 +286,13 @@ def _close_sandbox_for_repo(repo_root: str) -> None:
 
 
 # ── agent runner ────────────────────────────────────────────────────────────
-#
-# Split in two on purpose:
-#   _execute_agent_run   -- process-agnostic core. Touches only Redis/Postgres
-#                            (safe from any process) and its own return value;
-#                            never the API process's in-memory _runs/_sessions.
-#                            This is what runs as a plain thread (default) OR
-#                            as an RQ job in a separate `rq worker` process
-#                            (opt-in, see db/queue.py) -- same function either
-#                            way, since it doesn't know or care which.
-#   _dispatch_agent_run   -- entry point the routes call. Owns the bookkeeping
-#                            that HAS to live in this process (the local SSE
-#                            queue, session history, workspace cleanup
-#                            scheduling) and picks how the core function runs.
+# Split in two: _execute_agent_run is the process-agnostic core (touches only
+# Redis/Postgres and its return value, never this process's in-memory
+# _runs/_sessions) so it can run as a plain thread or as an RQ job in a
+# separate `rq worker` process (db/queue.py) unchanged. _dispatch_agent_run
+# is what routes call -- owns the bookkeeping that has to live in this
+# process (SSE queue, session history, workspace cleanup) and picks how the
+# core function runs.
 
 def _execute_agent_run(
     run_id: str,
@@ -342,15 +306,11 @@ def _execute_agent_run(
     repo_url: Optional[str] = None,
     extra_emit=None,
 ) -> dict:
-    # When this runs as an RQ job, it's executing in a separate `rq worker`
-    # OS process that never went through api/server.py's FastAPI `lifespan`
-    # startup -- db_cache/db_store would still be un-initialized there
-    # (their module-level connection is per-process). init_redis()/
-    # init_pool() are both idempotent (return immediately if already
-    # connected), so this is a cheap no-op on the in-process/thread path and
-    # the actual connection step the first time this runs inside a worker.
-    # The worker process still needs $REDIS_URL/$DATABASE_URL set in its own
-    # environment for this to have anything to connect to -- see README.
+    # As an RQ job this runs in a separate `rq worker` process that never
+    # went through FastAPI's `lifespan` startup, so db_cache/db_store need
+    # their own connection here. Both init calls are idempotent (no-op if
+    # already connected), so this only does real work the first time inside
+    # a worker -- which still needs $REDIS_URL/$DATABASE_URL in its own env.
     db_cache.init_redis()
     db_store.init_pool()
 
@@ -463,17 +423,12 @@ def _dispatch_agent_run(
 
     if is_queue_enabled() and db_cache.available():
         def _run_via_queue():
-            # Subscribe BEFORE enqueuing, not after: Redis pub/sub has no
-            # backlog, so if a worker dequeues and finishes fast enough (a
-            # job that fails immediately during setup can take well under a
-            # millisecond), it can publish every event -- including the
-            # terminal "run_result" -- before a subscribe-after-enqueue call
-            # would even reach Redis. Those events are then gone forever and
-            # the loop below hangs with no error. open_subscription() blocks
-            # until the subscription is server-confirmed, so anything
-            # enqueue_run() triggers afterwards is guaranteed to be seen.
-            # See db/cache.py's open_subscription() docstring for the full
-            # story.
+            # Subscribe BEFORE enqueuing: Redis pub/sub has no backlog, so a
+            # worker that finishes fast enough could publish every event
+            # (including the terminal "run_result") before a
+            # subscribe-after-enqueue call reaches Redis, hanging the loop
+            # below forever with no error. See db/cache.py's
+            # open_subscription() docstring for the full story.
             pubsub = db_cache.open_subscription(run_id)
             if pubsub is None:
                 # Redis dropped between the is_queue_enabled()/available()

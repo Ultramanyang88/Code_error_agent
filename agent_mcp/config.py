@@ -1,43 +1,13 @@
+"""
+Config-driven MCP server list (see mcp_servers.json.example for the full
+shape -- a list of {command, args, ...} entries, one per server).
+
+Resolution order: explicit `path` argument > $MCP_SERVERS_CONFIG env var >
+./mcp_servers.json > the one built-in filesystem server (so an agent with no
+config file behaves exactly as it did before this was configurable).
+"""
+
 from __future__ import annotations
-
-"""
-Config-driven MCP server list, replacing the single filesystem server that
-used to be hardcoded in main.py. Same shape as Claude Desktop's
-claude_desktop_config.json: a list of {command, args, ...} entries, one per
-server, each independently enabled/disabled and each with its own tool
-allow/deny policy.
-
-Config file resolution order:
-  1. explicit `path` argument
-  2. $MCP_SERVERS_CONFIG env var
-  3. ./mcp_servers.json in the current working directory, if present
-  4. built-in default: the one filesystem server that used to be hardcoded
-     -- so an agent with no config file behaves exactly as it did before.
-
-Example mcp_servers.json:
-[
-  {
-    "name": "mcp_fs",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
-    "namespace": "mcp_fs",
-    "enabled": true,
-    "cwd_from_repo_root": true,
-    "denied_tools": ["delete_.*", "move_.*"]
-  },
-  {
-    "name": "github",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-github"],
-    "namespace": "gh",
-    "enabled": false,
-    "allowed_tools": ["search_issues", "get_pull_request", "create_pull_request"],
-    "category": "vcs",
-    "category_purpose": "Git hosting operations: issues, PRs, reviews.",
-    "tool_categories": {"create_pull_request": "mutation"}
-  }
-]
-"""
 
 import json
 import os
@@ -70,22 +40,13 @@ class MCPServerConfig:
     args: List[str] = field(default_factory=list)
     namespace: str = ""
     enabled: bool = True
-    # If true, the subprocess's cwd is set to the repo being worked on (so a
-    # server whose tools resolve "." against their own cwd -- e.g. the
-    # filesystem server -- points at the right repo instead of wherever this
-    # process happened to be launched from).
-    cwd_from_repo_root: bool = False
+    cwd_from_repo_root: bool = False  # run the subprocess with cwd = the repo being worked on
     allowed_tools: Optional[List[str]] = None   # unqualified tool names; None = allow all
     denied_tools: List[str] = field(default_factory=list)  # regex patterns, always applied
 
-    # Category taxonomy (see tools/registry.py's ToolRegistry) for THIS
-    # server's tools, so they're routed the same way built-in tools are
-    # instead of being invisible to that system:
-    #   category:          default category for every tool this server exposes
-    #   tool_categories:    per-tool override, e.g. {"delete_file": "mutation"}
-    #   category_purpose:   one-line purpose text, only needed if `category`
-    #                       names a *new* category not already in
-    #                       tools/specs.py's TOOL_CATEGORIES
+    # Routes this server's tools through ToolRegistry's category system
+    # (tools/registry.py) like built-in tools. category_purpose is only
+    # needed for a category not already in tools/specs.py's TOOL_CATEGORIES.
     category: Optional[str] = None
     tool_categories: Dict[str, str] = field(default_factory=dict)
     category_purpose: Optional[str] = None

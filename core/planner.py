@@ -10,18 +10,10 @@ from tools.registry import ToolRegistry
 
 class Planner:
     """
-    Planner decomposes the user's request into executable coding-agent steps.
-
-    Supports:
-    1. LLM planner mode:
-       - Uses client.chat(...)
-       - Asks LLM to return structured JSON
-       - Each step includes task, reason, expected_output, suggested_tools
-
-    2. Fallback planner mode:
-       - No LLM needed
-       - Uses deterministic rule-based plans
-       - Useful for stable demos and debugging
+    Decomposes the user's request into executable coding-agent steps.
+    LLM mode asks client.chat(...) for structured JSON (task/reason/
+    expected_output/suggested_tools per step). Fallback mode needs no LLM --
+    deterministic rule-based plans, useful for demos and debugging.
     """
 
     def __init__(self, client: Optional[Any] = None, tool_registry: Optional[ToolRegistry] = None):

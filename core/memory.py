@@ -23,19 +23,10 @@ class MemoryItem:
 
 class AgentMemory:
     """
-    Memory module for the coding agent.
-
-    Short-term memory:
-    - Recent tool results
-    - Current errors
-    - Recently read files
-    - Test output
-
-    Long-term memory:
-    - Repo insights
-    - Architecture summaries
-    - Previously discovered bugs
-    - Useful implementation facts
+    Memory module for the coding agent. Short-term: recent tool results,
+    current errors, recently read files, test output. Long-term: repo
+    insights, architecture summaries, previously discovered bugs, useful
+    implementation facts.
     """
     @staticmethod
     def namespace_for(repo_root: str, session_id: Optional[str] = None):
@@ -195,19 +186,13 @@ class AgentMemory:
     def recall_candidates(self, query: str, top_k: int = 5, embedder: Any = None) -> List[Dict[str, Any]]:
         """
         Vector recall over active long-term memory, shaped like a RAGEngine
-        result dict (chunk_id/content/score/...) so it can be merged into the
-        same recall-then-rerank pipeline as code/knowledge-base results --
-        see rag/federated.py's FederatedRetriever.
-
-        Reuses the embedding model RAG already loads (rag.model_cache's
-        shared singleton) rather than a separate one, and does a brute-force
-        cosine scan rather than a FAISS index: long-term memory is typically
-        a few dozen to a few hundred items, so this is fast without needing
-        its own index to build/persist/invalidate.
-
-        Import of rag.model_cache is deferred to call time (not module load
-        time) so constructing an AgentMemory doesn't force-load the embedding
-        model for callers that never use this method.
+        result dict so it merges into the same recall-then-rerank pipeline
+        as code/knowledge-base results (see rag/federated.py). Reuses RAG's
+        shared embedding model (rag.model_cache) and does a brute-force
+        cosine scan rather than a FAISS index -- memory is typically a few
+        hundred items at most, so no index to build/persist/invalidate.
+        rag.model_cache is imported at call time so constructing an
+        AgentMemory doesn't force-load the embedding model unnecessarily.
         """
         active = [item for item in self.long_term if item.status == "active"]
         if not active or not query or not query.strip():

@@ -1,27 +1,17 @@
+"""
+Unified retrieval across sources that don't share a ranking pipeline: repo
+code + injected knowledge-base chunks are already one FAISS index behind
+RAGEngine's hybrid recall + rerank, but AgentMemory's long-term
+insights/preferences are a separate store with no vector index of its own.
+FederatedRetriever recalls a batch from each source, tags it with
+source_type, and reranks the combined pool through RAGEngine's reranker --
+so the best result wins regardless of source, instead of the caller
+manually interleaving two separately-ranked lists. Used by
+tools/tools.py's retrieve_context(). A future source (e.g. structured run
+history) plugs in the same way: recall a batch, tag it, add to the pool.
+"""
+
 from __future__ import annotations
-
-"""
-Unified retrieval across sources that otherwise don't share a ranking
-pipeline.
-
-Repo code and the injected knowledge-base chunks (tool/skill descriptions,
-see indexer.py's _inject_tool_spec_chunks/_inject_skill_chunks) are already
-merged into one FAISS index and share RAGEngine's hybrid recall + rerank.
-AgentMemory's long-term insights/preferences are a separate store with no
-vector index of their own. FederatedRetriever recalls a batch of candidates
-from each source, tags them with source_type, and reranks the *combined*
-pool through RAGEngine's existing reranker (cross-encoder if available,
-lexical fallback otherwise) -- so the most relevant result wins regardless
-of which source it came from, instead of the caller having to manually
-interleave two separately-ranked lists.
-
-Not wired into any tool yet: tools/tools.py's retrieve_context() still calls
-RAGEngine.retrieve() directly (code + knowledge base only). Routing it
-through FederatedRetriever.retrieve() instead is a one-line swap once memory
-recall has been validated in practice; a future "database retrieve" source
-(e.g. structured run history) plugs in the same way -- recall a batch,
-tag source_type="database", add it to the merged pool before rerank.
-"""
 
 from typing import Any, Dict, List, Optional
 

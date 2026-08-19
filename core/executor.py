@@ -694,18 +694,12 @@ If the current step is fully complete and no more tool call is needed, return a 
 
     def _tool_descriptions(self, suggested_tools: Optional[List[str]] = None) -> str:
         """
-        List available tools for the prompt.
-
-        When the step already has suggested_tools (from the planner), narrow
-        the listing to those tools' categories instead of dumping every
-        registered tool (including every MCP tool) into every single step's
-        prompt. suggested_tools may be concrete tool names and/or bare
-        category names (the planner only ever sees category summaries when a
-        tool_registry is set -- see Planner._available_tools_prompt_block).
-        Uses the category/MCP-aware ToolRegistry when one was given,
-        otherwise the static built-in-only expand_by_category(). Falls back
-        to the full tool list when there's nothing to narrow from, so
-        behavior is unchanged for steps the planner didn't give a hint for.
+        List available tools for the prompt. If the step has suggested_tools
+        (from the planner), narrow to those tools' categories instead of
+        dumping every registered tool -- MCP tools included -- into every
+        step's prompt. Uses the MCP-aware ToolRegistry when given, else the
+        static expand_by_category(). Falls back to the full list when
+        there's nothing to narrow from.
         """
         if not self.tools:
             return "No tools are currently registered."

@@ -59,15 +59,12 @@ def _bound_task_description(task_description: str) -> str:
 def _load_mcp_tools(repo_root: str) -> tuple:
     """
     Connect to every enabled server in the MCP config (mcp_servers.json /
-    $MCP_SERVERS_CONFIG, falling back to the single built-in filesystem
-    server -- see agent_mcp/config.py) and return (tools, configs): their
-    merged, allow/deny-filtered tool maps namespaced per server, plus the
-    config list itself so the caller can build a ToolRegistry (which needs
-    each config's declared tool categories -- see tools/registry.py).
-
-    Each server gets its own get_shared_mcp_client() connection, reused
-    across calls for the same (command, args, namespace, cwd) -- one server
-    being unreachable doesn't take the others down with it.
+    $MCP_SERVERS_CONFIG, falling back to the built-in filesystem server --
+    see agent_mcp/config.py) and return (tools, configs): merged,
+    allow/deny-filtered tool maps namespaced per server, plus the config
+    list so the caller can build a ToolRegistry. Each server gets its own
+    get_shared_mcp_client() connection, so one being unreachable doesn't
+    take the others down with it.
     """
     from agent_mcp.client import get_shared_mcp_client
     from agent_mcp.config import load_mcp_server_configs, filter_tool_map
@@ -268,15 +265,11 @@ def run_agent(
     )
 
     if step_callback:
-        # Field set matches api/server.py's _runs[run_id]["result"] shape --
-        # they used to differ (this one was missing steps_completed/
-        # steps_total/stop_reason/tool_call_count), so the SSE "done" event
-        # the frontend renders live and the polled /api/run/{id} result
-        # disagreed on what fields existed. fillAgentBubble() in
-        # api/static/index.html reads steps_completed/steps_total from
-        # whichever "done" payload it's handed, so this was a real bug, not
-        # just an inconsistency: every live-streamed run showed "undefined /
-        # undefined steps" in the UI.
+        # Field set must match api/server.py's _runs[run_id]["result"] shape
+        # -- they used to differ, so the SSE "done" event and the polled
+        # /api/run/{id} result disagreed on what fields existed, and
+        # fillAgentBubble() in index.html showed "undefined / undefined
+        # steps" for live-streamed runs.
         step_callback("done", {
             "validation": state.validation_status.value,
             "run_status": state.run_status.value,
