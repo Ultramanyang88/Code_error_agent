@@ -116,15 +116,45 @@ def publish_event(run_id: str, event: Dict[str, Any]) -> None:
         pass
 
 
-def subscribe_events(run_id: str) -> Iterator[Dict[str, Any]]:
+def open_subscription(run_id: str, timeout: float = 5.0):
     """
-    Blocking generator -- call from a dedicated thread, not the asyncio event
-    loop. Yields decoded event dicts as they're published, and stops (returns)
+    Subscribe to run_id's event channel and block until Redis has actually
+    confirmed the subscription, returning the raw pubsub handle (or None if
+    Redis isn't available).
+
+    Call this BEFORE doing anything that might publish to the channel (e.g.
+    enqueuing the job whose events you're about to consume). Redis pub/sub
+    has no backlog/replay -- a publish that happens before a subscriber's
+    SUBSCRIBE has been acked by the server is simply never delivered to that
+    subscriber. `pubsub.subscribe(...)` alone only sends the command; it
+    doesn't wait for the server's ack, so a publisher racing right behind it
+    (e.g. an RQ worker that dequeues and finishes a fast job in milliseconds)
+    can complete -- including publishing the terminal "run_result" event --
+    before the subscription is actually live. Whoever's waiting on that
+    event then blocks forever with no error, which is a much worse failure
+    mode than a normal exception. Consuming one `get_message()` here forces
+    that ack (redis-py's documented way to synchronize on it) before this
+    function returns, so a publish issued by the caller right after this
+    call is guaranteed to be seen. Pair with iter_subscription() to consume it.
+    """
+    if not available():
+        return None
+    pubsub = _redis.pubsub()
+    pubsub.subscribe(f"run_events:{run_id}")
+    pubsub.get_message(timeout=timeout)  # blocks for the SUBSCRIBE ack; see docstring
+    return pubsub
+
+
+def iter_subscription(pubsub) -> Iterator[Dict[str, Any]]:
+    """
+    Consume an already-subscribed pubsub handle (see open_subscription()).
+    Yields decoded event dicts as they're published, and stops (returns)
     right after an event of type "run_result" -- api/server.py's
     _execute_agent_run() always publishes exactly one of these, from its
     `finally` block, as the last thing it does, regardless of whether the run
     succeeded, failed, or hit a budget limit. Callers don't need a separate
-    sentinel value; the generator ending IS the signal.
+    sentinel value; the generator ending IS the signal. Closes `pubsub` on
+    the way out either way (normal completion or the caller breaking early).
 
     Known gap: if the worker process is killed hard enough that even the
     `finally` block never runs (not a Python exception, an actual process
@@ -132,10 +162,6 @@ def subscribe_events(run_id: str) -> Iterator[Dict[str, Any]]:
     class of problem as the "crashed run stays stuck in Postgres" gap noted
     in db/cleanup.sql; deferred for the same reason (no immediate impact).
     """
-    if not available():
-        return
-    pubsub = _redis.pubsub()
-    pubsub.subscribe(f"run_events:{run_id}")
     try:
         for message in pubsub.listen():
             if message.get("type") != "message":
@@ -149,7 +175,25 @@ def subscribe_events(run_id: str) -> Iterator[Dict[str, Any]]:
                 return
     finally:
         try:
-            pubsub.unsubscribe(f"run_events:{run_id}")
             pubsub.close()
         except Exception:
             pass
+
+
+def subscribe_events(run_id: str) -> Iterator[Dict[str, Any]]:
+    """
+    Convenience wrapper: subscribe-then-consume in one call. Blocking
+    generator -- call from a dedicated thread, not the asyncio event loop.
+
+    Only safe to use when nothing can publish to this channel until after
+    the caller starts iterating (e.g. tests that subscribe first and publish
+    from a separate thread afterwards). If you're about to trigger the
+    publisher yourself (like enqueuing the job), call open_subscription()
+    first and enqueue only after it returns -- see that function's docstring
+    for why, and _dispatch_agent_run() in api/server.py for the real caller
+    that needs this ordering.
+    """
+    pubsub = open_subscription(run_id)
+    if pubsub is None:
+        return
+    yield from iter_subscription(pubsub)

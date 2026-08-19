@@ -113,6 +113,42 @@ class TestCacheLive(unittest.TestCase):
         self.assertEqual(len(received), 1)
         self.assertEqual(received[0]["type"], "run_result")
 
+    def test_open_subscription_blocks_until_ready_no_sleep_needed(self):
+        # Regression test for the race that api/server.py's _run_via_queue()
+        # used to have: subscribe_events() alone only *sends* the SUBSCRIBE
+        # command, it doesn't wait for Redis's ack, so a publish issued
+        # immediately after starting a subscribe_events() listener thread
+        # (no time.sleep to let it "settle", unlike every other test in this
+        # class) can race ahead of the subscription and be dropped silently.
+        # open_subscription() is supposed to close that window by blocking
+        # until the subscription is actually confirmed -- prove it by
+        # publishing with zero delay and confirming nothing is lost, across
+        # several iterations to make the race window's absence more than luck.
+        for _ in range(20):
+            run_id = f"run-{uuid.uuid4().hex[:8]}"
+            pubsub = self.cache.open_subscription(run_id)
+            self.assertIsNotNone(pubsub)
+
+            received = []
+            import threading
+
+            def _listen():
+                for event in self.cache.iter_subscription(pubsub):
+                    received.append(event)
+
+            t = threading.Thread(target=_listen, daemon=True)
+            t.start()
+
+            # No sleep here on purpose -- open_subscription() already
+            # blocked until the SUBSCRIBE was acked, so this publish is
+            # guaranteed to be seen even issued right away.
+            self.cache.publish_event(run_id, {"type": "run_result", "data": {"ok": True}})
+            t.join(timeout=5)
+
+            self.assertFalse(t.is_alive(), "subscriber should have stopped after run_result")
+            self.assertEqual(len(received), 1, "run_result was dropped -- subscription wasn't actually ready")
+            self.assertEqual(received[0]["type"], "run_result")
+
 
 @unittest.skipIf(REDIS_URL, "this class specifically covers the NO-REDIS fallback path")
 class TestCacheUnconfigured(unittest.TestCase):

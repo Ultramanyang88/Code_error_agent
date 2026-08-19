@@ -463,6 +463,28 @@ def _dispatch_agent_run(
 
     if is_queue_enabled() and db_cache.available():
         def _run_via_queue():
+            # Subscribe BEFORE enqueuing, not after: Redis pub/sub has no
+            # backlog, so if a worker dequeues and finishes fast enough (a
+            # job that fails immediately during setup can take well under a
+            # millisecond), it can publish every event -- including the
+            # terminal "run_result" -- before a subscribe-after-enqueue call
+            # would even reach Redis. Those events are then gone forever and
+            # the loop below hangs with no error. open_subscription() blocks
+            # until the subscription is server-confirmed, so anything
+            # enqueue_run() triggers afterwards is guaranteed to be seen.
+            # See db/cache.py's open_subscription() docstring for the full
+            # story.
+            pubsub = db_cache.open_subscription(run_id)
+            if pubsub is None:
+                # Redis dropped between the is_queue_enabled()/available()
+                # check above and here -- same failure shape as an enqueue
+                # error below.
+                _runs[run_id]["queue"].put_nowait(
+                    {"type": "error", "data": {"message": "Redis unavailable for run event subscription"}}
+                )
+                _finalize({"error": "Redis unavailable for run event subscription", "run_status": "failed"})
+                return
+
             try:
                 from db.queue import enqueue_run
                 enqueue_run(
@@ -471,12 +493,13 @@ def _dispatch_agent_run(
                     job_id=run_id,
                 )
             except Exception as e:
+                pubsub.close()
                 _runs[run_id]["queue"].put_nowait({"type": "error", "data": {"message": f"Failed to enqueue run: {e}"}})
                 _finalize({"error": str(e), "run_status": "failed"})
                 return
 
             result: dict = {}
-            for event in db_cache.subscribe_events(run_id):
+            for event in db_cache.iter_subscription(pubsub):
                 if event.get("type") == "run_result":
                     result = event.get("data", {})
                     continue  # internal marker, not a frontend-facing SSE event
