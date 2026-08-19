@@ -199,8 +199,6 @@ python api/server.py
 
 ```bash
 python -m pytest testcase/test_all.py -v
-python testcase/test_tools.py
-python testcase/test_rag.py
 ```
 
 Optional integration tests:
