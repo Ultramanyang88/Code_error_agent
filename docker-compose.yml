@@ -1,0 +1,51 @@
+# Infra for the persistence layer: Postgres for durable records (sessions,
+# messages, run history), Redis for ephemeral/fast state (SSE event
+# pub/sub across workers, session activity TTLs, task queue broker later).
+#
+# This only stands up the two services — api/server.py does not read/write
+# them yet. See db/schema.sql for the intended table shapes and the mapping
+# from the current in-memory _sessions/_runs dicts.
+#
+# Usage:
+#   docker compose up -d
+#   docker compose down          # keep data (named volumes persist)
+#   docker compose down -v       # wipe data too
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agent}
+      POSTGRES_USER: ${POSTGRES_USER:-agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agent_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agent} -d ${POSTGRES_DB:-agent}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    # AOF persistence so cached/queued state survives a container restart
+    # (not durability-critical data -- Postgres is the source of truth).
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pg_data:
+  redis_data:

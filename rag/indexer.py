@@ -216,14 +216,34 @@ class RepoIndexer:
         return chunks
 
     def _inject_tool_spec_chunks(self) -> List[CodeChunk]:
-        """Create one synthetic chunk per registered tool, from TOOL_SPECS."""
+        """
+        Create knowledge-base chunks from TOOL_SPECS at two granularities:
+        one "category summary" chunk per category (coarse — which family of
+        tools handles this kind of step) and one "tool summary" chunk per
+        individual tool (fine — the specific tool's parameters/usage). Both
+        live in the same index, so a query naturally surfaces whichever
+        granularity scores higher instead of needing a separate lookup pass.
+        """
         chunks: List[CodeChunk] = []
         try:
             import sys as _sys
             _sys.path.insert(0, str(self.repo_root))
-            from tools.specs import TOOL_SPECS
+            from tools.specs import TOOL_SPECS, TOOL_CATEGORIES, category_summary_text
         except Exception:
             return chunks
+
+        for category in TOOL_CATEGORIES:
+            content = category_summary_text(category)
+            chunks.append(self._make_chunk(
+                file_path=f"__knowledge__/tool_categories/{category}",
+                content=content,
+                chunk_type="tool_category_summary",
+                symbol_name=category,
+                start_line=1,
+                end_line=content.count("\n") + 1,
+                language="text",
+                metadata={"kind": "tool_category_summary", "category": category},
+            ))
 
         for tool_name, spec in TOOL_SPECS.items():
             desc = spec.get("description", "")
@@ -237,6 +257,7 @@ class RepoIndexer:
 
             content = (
                 f"Tool: {tool_name}\n"
+                f"Category: {spec.get('category', 'uncategorized')}\n"
                 f"Description: {desc}\n"
                 f"When to use:\n{when_to_use}\n"
                 f"Parameters:\n{params_text}\n"
@@ -251,7 +272,11 @@ class RepoIndexer:
                 start_line=1,
                 end_line=content.count("\n") + 1,
                 language="text",
-                metadata={"kind": "tool_summary", "tool_name": tool_name},
+                metadata={
+                    "kind": "tool_summary",
+                    "tool_name": tool_name,
+                    "category": spec.get("category"),
+                },
             ))
 
         return chunks

@@ -13,10 +13,12 @@ from .state import ToolResult
 @dataclass
 class MemoryItem:
     content: str
-    memory_type: str = "general"
+    memory_type: str = "general"  # general | repo_insight | tool_observation | preference
     source: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    status: str = "active"  # active | stale | superseded
     created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
 
 
 class AgentMemory:
@@ -52,19 +54,43 @@ class AgentMemory:
     def _load_from_disk(self) -> None:
         if not self._persist_path or not self._persist_path.exists():
             return
+
+        raw_items: List[MemoryItem] = []
         for line in self._persist_path.read_text().splitlines():
             try:
                 d = json.loads(line)
-                self.long_term.append(MemoryItem(
+                created_at = d.get("created_at", time.time())
+                raw_items.append(MemoryItem(
                     content=d["content"],
                     memory_type=d.get("memory_type", "general"),
                     source=d.get("source"),
                     metadata=d.get("metadata", {}),
-                    created_at=d.get("created_at", time.time()),
+                    status=d.get("status", "active"),
+                    created_at=created_at,
+                    updated_at=d.get("updated_at", created_at),
                 ))
             except Exception:
                 continue
-    
+
+        # The JSONL file is an append-only log -- it can't be edited in
+        # place, so remember_preference() re-appends a new line on every
+        # update instead of rewriting the old one. Resolve "preference" items
+        # (identified by metadata["key"]) down to just their latest version;
+        # every other memory_type is kept as-is (append-only insight log).
+        latest_preference: Dict[str, MemoryItem] = {}
+        resolved: List[MemoryItem] = []
+        for item in raw_items:
+            key = item.metadata.get("key") if item.memory_type == "preference" else None
+            if key is None:
+                resolved.append(item)
+                continue
+            existing = latest_preference.get(key)
+            if existing is None or item.updated_at >= existing.updated_at:
+                latest_preference[key] = item
+
+        resolved.extend(latest_preference.values())
+        self.long_term = resolved
+
     def _persist_insight(self, item: MemoryItem) -> None:
         if not self._persist_path:
             return
@@ -75,7 +101,9 @@ class AgentMemory:
                 "memory_type": item.memory_type,
                 "source": item.source,
                 "metadata": item.metadata,
+                "status": item.status,
                 "created_at": item.created_at,
+                "updated_at": item.updated_at,
             }) + "\n")
 
     def add_tool_result(self, result: ToolResult) -> None:
@@ -107,16 +135,113 @@ class AgentMemory:
         self.long_term.append(item)
         self._persist_insight(item)
 
-    def retrieve_relevant(self, query: str, top_k: int= 3) -> List[MemoryItem]:
-        """Keyword-based relevance filter over long-term memory."""
+    def remember_preference(
+        self,
+        key: str,
+        value: str,
+        source: Optional[str] = None,
+    ) -> MemoryItem:
+        """
+        Upsert a user/task preference (e.g. "preferred_test_command",
+        "code_style"), keyed by `key` so repeated observations converge on
+        the latest value instead of piling up as separate, possibly
+        contradictory insights every time the same preference is re-observed.
+
+        Safe to call every time -- an existing entry for `key` is updated in
+        place (in memory) and re-persisted; a new one is created otherwise.
+        """
+        now = time.time()
+
+        for item in self.long_term:
+            if item.memory_type == "preference" and item.metadata.get("key") == key:
+                item.content = value
+                item.updated_at = now
+                item.metadata["update_count"] = item.metadata.get("update_count", 1) + 1
+                self._persist_insight(item)  # append-only log; _load_from_disk resolves to latest
+                return item
+
+        item = MemoryItem(
+            content=value,
+            memory_type="preference",
+            source=source,
+            metadata={"key": key, "update_count": 1},
+            created_at=now,
+            updated_at=now,
+        )
+        self.long_term.append(item)
+        self._persist_insight(item)
+        return item
+
+    def retrieve_relevant(
+        self,
+        query: str,
+        top_k: int = 3,
+        memory_types: Optional[List[str]] = None,
+    ) -> List[MemoryItem]:
+        """Keyword-based relevance filter over active long-term memory."""
         query_lower = query.lower()
         scored = []
         for item in self.long_term:
+            if item.status != "active":
+                continue
+            if memory_types and item.memory_type not in memory_types:
+                continue
             score = sum(1 for word in query_lower.split() if word in item.content.lower())
             if score > 0:
                 scored.append((score, item))
         scored.sort(key=lambda x: x[0], reverse=True)
         return [item for _, item in scored[:top_k]]
+
+    def recall_candidates(self, query: str, top_k: int = 5, embedder: Any = None) -> List[Dict[str, Any]]:
+        """
+        Vector recall over active long-term memory, shaped like a RAGEngine
+        result dict (chunk_id/content/score/...) so it can be merged into the
+        same recall-then-rerank pipeline as code/knowledge-base results --
+        see rag/federated.py's FederatedRetriever.
+
+        Reuses the embedding model RAG already loads (rag.model_cache's
+        shared singleton) rather than a separate one, and does a brute-force
+        cosine scan rather than a FAISS index: long-term memory is typically
+        a few dozen to a few hundred items, so this is fast without needing
+        its own index to build/persist/invalidate.
+
+        Import of rag.model_cache is deferred to call time (not module load
+        time) so constructing an AgentMemory doesn't force-load the embedding
+        model for callers that never use this method.
+        """
+        active = [item for item in self.long_term if item.status == "active"]
+        if not active or not query or not query.strip():
+            return []
+
+        if embedder is None:
+            from rag.model_cache import get_shared_embedder
+            embedder = get_shared_embedder()
+
+        doc_embeddings = embedder.embed_texts([item.content for item in active])
+        query_embedding = embedder.embed_query(query)[0]
+        scores = doc_embeddings @ query_embedding  # both normalized -> cosine similarity
+
+        ranked = sorted(zip(scores.tolist(), active), key=lambda x: x[0], reverse=True)[:top_k]
+
+        results: List[Dict[str, Any]] = []
+        for score, item in ranked:
+            key = item.metadata.get("key") if item.metadata else None
+            results.append({
+                "chunk_id": f"memory:{item.memory_type}:{key or id(item)}",
+                "file_path": f"__memory__/{item.memory_type}",
+                "content": item.content,
+                "chunk_type": item.memory_type,
+                "symbol_name": key,
+                "start_line": 1,
+                "end_line": 1,
+                "language": "text",
+                "score": float(score),
+                "vector_score": float(score),
+                "keyword_score": 0.0,
+                "source": "memory",
+                "metadata": item.metadata,
+            })
+        return results
     
     def summarize_short_term(self, max_items: int = 8, max_chars: int = 4000) -> str:
         recent = self.short_term[-max_items:]

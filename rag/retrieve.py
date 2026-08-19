@@ -267,12 +267,24 @@ class RAGEngine:
         )
 
         reranked = self.rerank(query=query, candidates=candidates, top_k=top_k)
+        return self.apply_relevance_floor(reranked, min_score)
 
+    def apply_relevance_floor(
+        self,
+        reranked: List[Dict[str, Any]],
+        min_score: Optional[float],
+    ) -> List[Dict[str, Any]]:
+        """
+        Drop reranked results below min_score; if that would drop everything,
+        keep the single best result flagged as _low_relevance instead of
+        returning nothing. Shared with FederatedRetriever (rag/federated.py)
+        so any caller that reranks a candidate pool through this engine gets
+        the same "honestly say nothing is relevant" behavior as retrieve().
+        """
         if self._cross_encoder is not None and min_score is not None and reranked:
             filtered = [r for r in reranked if r.get("rerank_score", 0.0) >= min_score]
             if filtered:
                 return filtered
-            # All below threshold: return top-1 with a warning flag so caller can signal "weak results"
             top = dict(reranked[0])
             top["_low_relevance"] = True
             return [top]

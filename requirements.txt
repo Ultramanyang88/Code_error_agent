@@ -1,6 +1,7 @@
 # Core agent
 requests>=2.31.0
 numpy>=2.0.0
+python-dotenv>=1.0.0
 
 # RAG
 faiss-cpu>=1.7.4
@@ -20,5 +21,18 @@ openai>=1.30.0
 # Testing
 pytest>=8.0.0
 
-# Optional: PostgreSQL persistence (uncomment when enabling DB)
-# asyncpg>=0.29.0
+# Persistence (db/store.py) -- optional at runtime: api/server.py falls back
+# to in-memory-only if $DATABASE_URL isn't set/reachable, but the driver
+# itself is a hard dependency now (not commented out) since db/store.py
+# imports it directly.
+psycopg[binary,pool]>=3.2.0
+
+# Redis (db/cache.py): session-activity TTL + SSE pub/sub relay for
+# out-of-process RQ jobs. Optional at runtime -- falls back to thread-based
+# tracking/in-process queues if $REDIS_URL isn't set/reachable.
+redis>=5.0.0
+
+# Task queue (db/queue.py): run agent jobs in a separate `rq worker` process
+# instead of an unbounded threading.Thread per request. Opt-in via
+# $AGENT_QUEUE_ENABLED -- see README's "Task queue" section.
+rq>=2.0.0

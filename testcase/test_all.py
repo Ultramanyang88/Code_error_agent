@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -27,7 +28,7 @@ from core.executor import Executor
 from core.memory import AgentMemory
 from tools.tools import (
     list_files, read_file, search_code, write_file,
-    replace_in_file, run_command, identify_error, get_tool_map,
+    replace_in_file, run_command, run_tests, identify_error, get_tool_map,
 )
 
 
@@ -188,6 +189,41 @@ class TestAgentState(unittest.TestCase):
         self.state.add_plan([s])
         self.assertIsNone(self.state.get_current_step())
 
+    def test_get_current_step_skips_step_with_exhausted_retries(self):
+        # step 1 has failed more times than the budget allows -> permanently
+        # skipped by get_current_step, but step 2 is still pending.
+        s1 = PlanStep(step_id=1, task="a")
+        for _ in range(self.state.budget.max_step_retries + 1):
+            s1.mark_failed("boom")
+        s2 = PlanStep(step_id=2, task="b")
+        self.state.add_plan([s1, s2])
+
+        step = self.state.get_current_step()
+        self.assertIsNotNone(step)
+        assert step is not None
+        self.assertEqual(step.step_id, 2)
+
+    def test_has_unresolved_failures_true_when_retries_exhausted(self):
+        s = PlanStep(step_id=1, task="a")
+        for _ in range(self.state.budget.max_step_retries + 1):
+            s.mark_failed("boom")
+        self.state.add_plan([s])
+        self.assertIsNone(self.state.get_current_step())
+        self.assertTrue(self.state.has_unresolved_failures())
+
+    def test_has_unresolved_failures_false_when_all_completed(self):
+        s = PlanStep(step_id=1, task="a")
+        s.mark_running()
+        s.mark_completed("ok")
+        self.state.add_plan([s])
+        self.assertFalse(self.state.has_unresolved_failures())
+
+    def test_has_unresolved_failures_false_while_step_still_retryable(self):
+        s = PlanStep(step_id=1, task="a")
+        s.mark_failed("boom")  # one failure, still well under the retry budget
+        self.state.add_plan([s])
+        self.assertFalse(self.state.has_unresolved_failures())
+
     def test_plan_summary(self):
         self.state.add_plan([PlanStep(step_id=1, task="inspect")])
         summary = self.state.plan_summary()
@@ -259,6 +295,12 @@ class TestReadFile(unittest.TestCase):
     def test_path_traversal_blocked(self):
         r = read_file(self.state, path="../../etc/passwd")
         self.assertFalse(r.success)
+
+    def test_reads_empty_file(self):
+        (self.repo / "blank.py").write_text("")
+        r = read_file(self.state, path="blank.py")
+        self.assertTrue(r.success)
+        self.assertEqual(r.metadata["total_lines"], 0)
 
 
 class TestSearchCode(unittest.TestCase):
@@ -341,6 +383,59 @@ class TestWriteAndReplaceFile(unittest.TestCase):
         self.assertFalse(r.success)
 
 
+class TestRunTestsDiscovery(unittest.TestCase):
+    """
+    Regression coverage for run_tests() finding tests that aren't under a
+    tests/ or testcase/ folder -- e.g. a flat test_*.py sitting next to the
+    module it tests, which is exactly how the eval fixtures under
+    testcase/py/ and testcase/tasks/*/ are laid out. Before this fix,
+    run_tests() silently degraded to `compileall` (a syntax check only) for
+    any repo shaped like that, so a real failing test could still report
+    validation_status=PASSED.
+    """
+
+    def tearDown(self):
+        shutil.rmtree(self.repo, ignore_errors=True)
+
+    def test_finds_flat_test_file_with_no_tests_folder(self):
+        self.repo = make_repo({
+            "calc.py": "def add(a, b):\n    return a + b\n",
+            "test_calc.py": (
+                "from calc import add\n"
+                "def test_add():\n"
+                "    assert add(1, 2) == 3\n"
+            ),
+        })
+        state = make_state(repo_root=str(self.repo))
+        r = run_tests(state)
+        self.assertTrue(r.success, r.output)
+        self.assertIn("1 passed", r.output)
+
+    def test_reports_failure_not_false_positive_pass(self):
+        # The exact failure mode this bug caused: a genuinely broken flat
+        # test file must come back as a FAILED run_tests, not silently pass
+        # via a compileall fallback that never executed the assertion.
+        self.repo = make_repo({
+            "calc.py": "def add(a, b):\n    return a - b\n",  # bug: subtracts
+            "test_calc.py": (
+                "from calc import add\n"
+                "def test_add():\n"
+                "    assert add(1, 2) == 3\n"
+            ),
+        })
+        state = make_state(repo_root=str(self.repo))
+        r = run_tests(state)
+        self.assertFalse(r.success)
+        self.assertIn("1 failed", r.output)
+
+    def test_falls_back_to_compileall_when_genuinely_no_tests(self):
+        self.repo = make_repo({"script.py": "x = 1\n"})
+        state = make_state(repo_root=str(self.repo))
+        r = run_tests(state)
+        self.assertTrue(r.success, r.output)
+        self.assertIn("Compiling", r.output)
+
+
 class TestRunCommand(unittest.TestCase):
 
     def setUp(self):
@@ -368,6 +463,65 @@ class TestRunCommand(unittest.TestCase):
         r = run_command(self.state, command="python hello.py")
         self.assertTrue(r.success)
         self.assertIn("hi", r.output)
+
+
+class TestSandboxConfig(unittest.TestCase):
+    """
+    Fast, Docker-free coverage: env var parsing and the disabled-by-default
+    behavior. Live container tests (start/exec/network isolation/cleanup)
+    are in testcase/test_sandbox.py, gated on Docker actually being
+    reachable -- see that file's docstring.
+    """
+
+    def setUp(self):
+        self._orig = os.environ.get("AGENT_SANDBOX_ENABLED")
+
+    def tearDown(self):
+        if self._orig is None:
+            os.environ.pop("AGENT_SANDBOX_ENABLED", None)
+        else:
+            os.environ["AGENT_SANDBOX_ENABLED"] = self._orig
+
+    def test_disabled_by_default(self):
+        os.environ.pop("AGENT_SANDBOX_ENABLED", None)
+        from sandbox.docker_sandbox import is_sandbox_enabled
+        self.assertFalse(is_sandbox_enabled())
+
+    def test_enabled_by_truthy_values(self):
+        from sandbox.docker_sandbox import is_sandbox_enabled
+        for value in ["1", "true", "True", "yes", "YES"]:
+            os.environ["AGENT_SANDBOX_ENABLED"] = value
+            self.assertTrue(is_sandbox_enabled(), f"expected enabled for {value!r}")
+
+    def test_disabled_by_falsy_values(self):
+        from sandbox.docker_sandbox import is_sandbox_enabled
+        for value in ["0", "false", "", "no"]:
+            os.environ["AGENT_SANDBOX_ENABLED"] = value
+            self.assertFalse(is_sandbox_enabled(), f"expected disabled for {value!r}")
+
+    def test_run_command_uses_host_path_when_sandbox_disabled(self):
+        # Regression guard for the sys.executable-inside-a-container bug:
+        # with sandboxing off (the default), _python_command() must return
+        # this exact interpreter, not a bare "python3".
+        os.environ.pop("AGENT_SANDBOX_ENABLED", None)
+        from tools.tools import _python_command
+        import sys as _sys
+        self.assertEqual(_python_command(), _sys.executable)
+
+    def test_container_name_is_stable_across_processes(self):
+        # Regression guard: container_name must NOT be derived from Python's
+        # built-in hash() (salted per-process by PYTHONHASHSEED) -- otherwise
+        # a container orphaned by a crash (skipping the atexit cleanup) can
+        # never be found/removed by a later process, since the name it would
+        # look for keeps changing. Simulate "another process" by checking the
+        # name is deterministic from repo_root alone, independent of hash().
+        from sandbox.docker_sandbox import DockerSandbox
+        a = DockerSandbox(repo_root="/tmp/some/repo")
+        b = DockerSandbox(repo_root="/tmp/some/repo")
+        self.assertEqual(a.container_name, b.container_name)
+        # and different repos must not collide
+        c = DockerSandbox(repo_root="/tmp/some/other-repo")
+        self.assertNotEqual(a.container_name, c.container_name)
 
 
 class TestIdentifyError(unittest.TestCase):
@@ -463,6 +617,180 @@ class TestExecutorNormalize(unittest.TestCase):
     def test_run_command_cmd_alias(self):
         args = self.executor._normalize_tool_arguments("run_command", {"cmd": "ls"})
         self.assertEqual(args["command"], "ls")
+
+
+class TestToolCategories(unittest.TestCase):
+
+    def test_every_tool_has_a_known_category(self):
+        from tools.specs import TOOL_SPECS, TOOL_CATEGORIES
+        for name, spec in TOOL_SPECS.items():
+            self.assertIn(spec.get("category"), TOOL_CATEGORIES, f"{name} has no valid category")
+
+    def test_category_of_known_and_unknown_tool(self):
+        from tools.specs import category_of
+        self.assertEqual(category_of("read_file"), "inspection")
+        self.assertIsNone(category_of("mcp_fs__read_file"))  # not in TOOL_SPECS
+
+    def test_expand_by_category_pulls_in_siblings(self):
+        from tools.specs import expand_by_category
+        # write_file's category (mutation) also contains replace_in_file/apply_patch
+        expanded = expand_by_category(["write_file"])
+        self.assertIn("write_file", expanded)
+        self.assertIn("replace_in_file", expanded)
+        self.assertIn("apply_patch", expanded)
+        self.assertNotIn("run_command", expanded)  # different category
+
+    def test_expand_by_category_passthrough_for_unrecognized_tools(self):
+        from tools.specs import expand_by_category
+        expanded = expand_by_category(["mcp_fs__read_file"], available=["mcp_fs__read_file"])
+        self.assertEqual(expanded, ["mcp_fs__read_file"])
+
+    def test_tool_descriptions_narrows_to_suggested_category(self):
+        executor = Executor(client=None, tools=get_tool_map())
+        narrowed = executor._tool_descriptions(suggested_tools=["write_file"])
+        self.assertIn("write_file", narrowed)
+        self.assertIn("apply_patch", narrowed)      # same category, pulled in
+        self.assertNotIn("run_command", narrowed)   # different category, excluded
+
+    def test_tool_descriptions_full_list_without_suggestion(self):
+        executor = Executor(client=None, tools=get_tool_map())
+        full = executor._tool_descriptions()
+        self.assertIn("write_file", full)
+        self.assertIn("run_command", full)
+
+
+class TestToolRegistry(unittest.TestCase):
+    """
+    ToolRegistry merges tools/specs.py's static built-in categories with
+    per-server categories declared on MCPServerConfig, so MCP tools aren't
+    invisible to the same routing system built-in tools use.
+    """
+
+    def _make_registry(self):
+        from tools.registry import ToolRegistry
+        from agent_mcp.config import MCPServerConfig
+
+        all_tools = dict(get_tool_map())
+        all_tools.update({
+            "gh__search_issues": lambda **kw: None,
+            "gh__create_pull_request": lambda **kw: None,
+            "misc__ping": lambda **kw: None,  # server with no declared category at all
+        })
+        gh_config = MCPServerConfig(
+            name="gh", command="npx", namespace="gh",
+            category="vcs", category_purpose="Git hosting operations: issues, PRs, reviews.",
+            tool_categories={"create_pull_request": "mutation"},  # per-tool override
+        )
+        misc_config = MCPServerConfig(name="misc", command="npx", namespace="misc")  # no category
+        return ToolRegistry.build(all_tools, mcp_configs=[gh_config, misc_config])
+
+    def test_static_tool_category_still_resolves(self):
+        registry = self._make_registry()
+        self.assertEqual(registry.category_of("read_file"), "inspection")
+
+    def test_mcp_tool_gets_server_default_category(self):
+        registry = self._make_registry()
+        self.assertEqual(registry.category_of("gh__search_issues"), "vcs")
+
+    def test_mcp_tool_per_tool_override_wins_over_server_default(self):
+        registry = self._make_registry()
+        self.assertEqual(registry.category_of("gh__create_pull_request"), "mutation")
+
+    def test_unmapped_mcp_tool_has_no_category(self):
+        registry = self._make_registry()
+        self.assertIsNone(registry.category_of("misc__ping"))
+
+    def test_category_summary_prompt_includes_new_mcp_category(self):
+        registry = self._make_registry()
+        summary = registry.category_summary_prompt()
+        self.assertIn("vcs", summary)
+        self.assertIn("Git hosting operations", summary)
+        self.assertIn("uncategorized", summary)  # misc__ping falls here
+
+    def test_expand_by_category_accepts_bare_category_name(self):
+        registry = self._make_registry()
+        # planner names a category directly instead of a specific tool
+        expanded = registry.expand_by_category(["mutation"])
+        self.assertIn("write_file", expanded)
+        self.assertIn("apply_patch", expanded)
+        self.assertIn("gh__create_pull_request", expanded)  # MCP tool, same category
+        self.assertNotIn("run_command", expanded)
+
+    def test_expand_by_category_mixes_tool_and_category_names(self):
+        registry = self._make_registry()
+        expanded = registry.expand_by_category(["read_file", "vcs"])
+        self.assertIn("read_file", expanded)
+        self.assertIn("gh__search_issues", expanded)
+
+    def test_expand_by_category_unrecognized_passthrough(self):
+        registry = self._make_registry()
+        expanded = registry.expand_by_category(["misc__ping"])
+        self.assertEqual(expanded, ["misc__ping"])
+
+
+class TestPlannerToolRegistryIntegration(unittest.TestCase):
+
+    def test_no_registry_uses_hardcoded_tool_list(self):
+        planner = Planner(client=None)
+        prompt = planner._system_prompt()
+        self.assertIn("Use only available tool names", prompt)
+
+    def test_registry_uses_category_summary_instead_of_flat_list(self):
+        from tools.registry import ToolRegistry
+        registry = ToolRegistry.build(get_tool_map())
+        planner = Planner(client=None, tool_registry=registry)
+        prompt = planner._system_prompt()
+        self.assertIn("CATEGORIES", prompt)
+        self.assertNotIn("Use only available tool names", prompt)
+
+        block = planner._available_tools_prompt_block()
+        self.assertIn("mutation", block)
+        self.assertIn("execution", block)
+
+    def test_general_purpose_framing_present(self):
+        # Planner should no longer read as bug-fix-only.
+        planner = Planner(client=None)
+        prompt = planner._system_prompt()
+        self.assertIn("general-purpose", prompt)
+        self.assertIn("refactoring", prompt)
+
+
+class TestToolResultIsEnough(unittest.TestCase):
+    """
+    Regression coverage for _tool_result_is_enough's used_tools tracking.
+
+    Before the fix, _llm_execute_step never passed used_tools, so this always
+    saw an empty set and summary-type steps could never be marked "enough"
+    after actually reading/retrieving context.
+    """
+
+    def setUp(self):
+        self.executor = Executor(client=None)
+        self.summary_step = PlanStep(step_id=1, task="Summarize the project")
+
+    def test_summary_step_not_enough_without_prior_context_tool(self):
+        result = ToolResult(tool_name="read_file", success=True, output="content")
+        enough = self.executor._tool_result_is_enough(
+            self.summary_step, result, used_tools=set()
+        )
+        self.assertFalse(enough)
+
+    def test_summary_step_enough_after_context_tool_used(self):
+        # A prior round already called retrieve_context (tracked via
+        # used_tools); a later, unrelated successful tool call can now be
+        # treated as "this step has enough grounding to stop".
+        result = ToolResult(tool_name="identify_error", success=True, output="ok")
+        enough = self.executor._tool_result_is_enough(
+            self.summary_step, result, used_tools={"retrieve_context"}
+        )
+        self.assertTrue(enough)
+
+    def test_failed_result_is_never_enough(self):
+        result = ToolResult(tool_name="read_file", success=False, output="", error="nope")
+        enough = self.executor._tool_result_is_enough(
+            self.summary_step, result, used_tools={"retrieve_context"}
+        )
+        self.assertFalse(enough)
 
 
 class TestExecutorFallback(unittest.TestCase):
@@ -569,6 +897,53 @@ class TestPlannerFallback(unittest.TestCase):
         self.planner.adjust_plan(state)
         self.assertGreater(len(state.plan), original_len)
 
+    # ── task taxonomy: general-purpose planning beyond bug-fix ──────────────
+
+    def test_classify_test_writing(self):
+        self.assertEqual(self.planner._classify_task("write unit tests for the parser"), "test_writing")
+
+    def test_classify_dependency_upgrade(self):
+        self.assertEqual(self.planner._classify_task("upgrade requests to the latest version"), "dependency_upgrade")
+
+    def test_classify_refactor(self):
+        self.assertEqual(self.planner._classify_task("refactor the executor module"), "refactor")
+
+    def test_classify_feature_add(self):
+        self.assertEqual(self.planner._classify_task("implement a new caching feature"), "feature_add")
+
+    def test_classify_review(self):
+        self.assertEqual(self.planner._classify_task("please review this diff"), "review")
+
+    def test_classify_defaults_to_bug_fix(self):
+        self.assertEqual(self.planner._classify_task("the server keeps crashing"), "bug_fix")
+
+    def test_test_writing_plan_includes_write_and_run_tests(self):
+        state = make_state(task="Write unit tests for the parser module", repo_root=str(self.repo))
+        steps = self.planner.create_initial_plan(state)
+        all_tools = [t for s in steps for t in s.suggested_tools]
+        self.assertIn("run_tests", all_tools)
+        self.assertTrue(any(t in all_tools for t in ("write_file", "replace_in_file")))
+
+    def test_refactor_plan_validates_before_and_after(self):
+        state = make_state(task="Refactor the memory module to reduce duplication", repo_root=str(self.repo))
+        steps = self.planner.create_initial_plan(state)
+        run_tests_count = sum(1 for s in steps for t in s.suggested_tools if t == "run_tests")
+        # A refactor plan should validate BEFORE (baseline) and AFTER the change.
+        self.assertGreaterEqual(run_tests_count, 2)
+
+    def test_review_plan_never_edits_code(self):
+        state = make_state(task="Please review this diff for correctness", repo_root=str(self.repo))
+        steps = self.planner.create_initial_plan(state)
+        all_tools = [t for s in steps for t in s.suggested_tools]
+        for edit_tool in ("apply_patch", "write_file", "replace_in_file"):
+            self.assertNotIn(edit_tool, all_tools)
+        self.assertIn("git_diff", all_tools)
+
+    def test_dependency_upgrade_plan_checks_usages_before_bumping(self):
+        state = make_state(task="Upgrade the requests dependency to the latest version", repo_root=str(self.repo))
+        steps = self.planner.create_initial_plan(state)
+        self.assertIn("run_tests", [t for s in steps for t in s.suggested_tools])
+
     def test_parse_valid_json_plan(self):
         plan_json = json.dumps([
             {"task": "Read file", "reason": "need to inspect",
@@ -650,6 +1025,45 @@ class TestAgentMemory(unittest.TestCase):
         # Should auto-add insight about tests passing
         self.assertTrue(any("passed" in i.content for i in self.memory.long_term))
 
+    def test_remember_preference_creates_new(self):
+        item = self.memory.remember_preference("test_command", "pytest -x")
+        self.assertEqual(item.memory_type, "preference")
+        self.assertEqual(item.metadata["key"], "test_command")
+        self.assertEqual(item.metadata["update_count"], 1)
+
+    def test_remember_preference_upserts_same_key(self):
+        first = self.memory.remember_preference("test_command", "pytest -x")
+        second = self.memory.remember_preference("test_command", "pytest -x -q")
+
+        prefs = [i for i in self.memory.long_term if i.metadata.get("key") == "test_command"]
+        self.assertEqual(len(prefs), 1)  # updated in place, not duplicated
+        self.assertEqual(prefs[0].content, "pytest -x -q")
+        self.assertEqual(prefs[0].metadata["update_count"], 2)
+        self.assertIs(first, second)  # same object, mutated
+
+    def test_remember_preference_reload_resolves_to_latest(self):
+        self.memory.remember_preference("editor", "vim")
+        self.memory.remember_preference("editor", "neovim")
+
+        # The JSONL log now has two lines for the same key; a fresh load
+        # must resolve down to just the latest value, not both.
+        reloaded = AgentMemory(persist_dir=str(self.tmp))
+        prefs = [i for i in reloaded.long_term if i.metadata.get("key") == "editor"]
+        self.assertEqual(len(prefs), 1)
+        self.assertEqual(prefs[0].content, "neovim")
+
+    def test_retrieve_relevant_skips_inactive_status(self):
+        self.memory.add_insight("stale note about the old auth flow")
+        self.memory.long_term[0].status = "stale"
+        results = self.memory.retrieve_relevant("old auth flow")
+        self.assertEqual(results, [])
+
+    def test_retrieve_relevant_filters_by_memory_type(self):
+        self.memory.add_insight("a repo fact", memory_type="repo_insight")
+        self.memory.remember_preference("style", "tabs not spaces")
+        results = self.memory.retrieve_relevant("tabs style", memory_types=["preference"])
+        self.assertTrue(all(r.memory_type == "preference" for r in results))
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. End-to-End Agent Smoke Tests
@@ -698,6 +1112,19 @@ class TestAgentEndToEnd(unittest.TestCase):
         self.assertIn("plan_created", events)
         self.assertIn("step_start", events)
         self.assertIn("done", events)
+
+    def test_state_run_id_matches_caller_run_id(self):
+        # state.run_id defaults to its own uuid4 -- run_agent must overwrite it
+        # with the run_id it was given/returns, otherwise log events keyed on
+        # state.run_id can never be correlated back to a specific API run.
+        from main import run_agent
+        state = run_agent(
+            task_description="List all Python files.",
+            repo_root=str(self.repo),
+            client=None,
+            run_id="fixed-test-run-id",
+        )
+        self.assertEqual(state.run_id, "fixed-test-run-id")
 
     def test_fix_bug_task(self):
         """Agent can apply a fix to a file with a known bug."""
@@ -956,6 +1383,190 @@ class TestMCPClient(unittest.TestCase):
         client = MCPToolClient(command="echo", args=[], namespace="myns")
         self.assertEqual(client.namespace, "myns")
 
+    def test_not_connected_until_connect_called(self):
+        from agent_mcp.client import MCPToolClient
+        client = MCPToolClient(command="echo", args=[], namespace="ns")
+        self.assertFalse(client.is_connected)
+
+    def test_shared_client_does_not_cache_failed_connection(self):
+        # A failed connect() must not poison the process-wide cache -- the
+        # next call for the same key should retry from scratch rather than
+        # permanently remembering "this server is down".
+        import agent_mcp.client as mcp_client_module
+
+        key = ("nonexistent_binary_xyz", (), "ns_fail_test", None)
+        mcp_client_module._shared_clients.pop(key, None)
+
+        with self.assertRaises(Exception):
+            mcp_client_module.get_shared_mcp_client(
+                command="nonexistent_binary_xyz", args=[], namespace="ns_fail_test"
+            )
+        self.assertNotIn(key, mcp_client_module._shared_clients)
+
+    def test_close_shared_mcp_client_is_safe_when_nothing_cached(self):
+        from agent_mcp.client import close_shared_mcp_client
+        # Should not raise even though no client was ever opened for this key.
+        close_shared_mcp_client(command="echo", args=[], namespace="never_opened_ns")
+
+
+class TestMCPServerResourcesAndPrompts(unittest.TestCase):
+    """
+    Real end-to-end checks against our own agent_mcp/server.py subprocess --
+    no mocking of the MCP protocol -- since resources/prompts are new surface
+    and the SDK's exact handler contract (str vs Iterable[ReadResourceContents],
+    old-style vs *Result-style list handlers) is easy to get subtly wrong.
+    """
+
+    @classmethod
+    def _run(cls, coro):
+        import asyncio
+        return asyncio.run(coro)
+
+    @staticmethod
+    async def _session():
+        import sys
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        params = StdioServerParameters(command=sys.executable, args=["-m", "agent_mcp.server"])
+        async with stdio_client(params) as (r, w):
+            async with ClientSession(r, w) as session:
+                await session.initialize()
+                yield session
+
+    def test_lists_tool_category_and_skill_resources(self):
+        async def run():
+            async for session in self._session():
+                result = await session.list_resources()
+                uris = [str(r.uri) for r in result.resources]
+                self.assertTrue(any(u.startswith("tool-category://") for u in uris))
+                self.assertTrue(any(u.startswith("skill://") for u in uris))
+                return uris
+        uris = self._run(run())
+        self.assertIn("tool-category://execution", uris)
+
+    def test_reads_tool_category_resource_content(self):
+        async def run():
+            async for session in self._session():
+                result = await session.read_resource("tool-category://execution")
+                return result.contents[0].text
+        text = self._run(run())
+        self.assertIn("run_command", text)
+        self.assertIn("run_tests", text)
+
+    def test_reads_skill_resource_content(self):
+        async def run():
+            async for session in self._session():
+                result = await session.read_resource("skill://fix_import_error")
+                return result.contents[0].text
+        text = self._run(run())
+        self.assertIn("fix_import_error", text)
+
+    def test_unknown_resource_raises(self):
+        async def run():
+            async for session in self._session():
+                await session.read_resource("skill://does_not_exist")
+        with self.assertRaises(Exception):
+            self._run(run())
+
+    def test_lists_prompts_from_skills(self):
+        async def run():
+            async for session in self._session():
+                result = await session.list_prompts()
+                return [p.name for p in result.prompts]
+        names = self._run(run())
+        self.assertIn("fix_import_error", names)
+
+    def test_get_prompt_interpolates_task_argument(self):
+        async def run():
+            async for session in self._session():
+                result = await session.get_prompt("fix_import_error", arguments={"task": "fix foo.py"})
+                return result.messages[0].content.text
+        text = self._run(run())
+        self.assertIn("fix foo.py", text)
+        self.assertIn("fix_import_error", text)
+
+
+class TestMCPServerConfig(unittest.TestCase):
+
+    def test_default_config_is_single_filesystem_server(self):
+        from agent_mcp.config import load_mcp_server_configs
+        # Run from an empty cwd with no env var set -> built-in default,
+        # preserving today's behavior (one filesystem server) unchanged.
+        import os
+        old_env = os.environ.pop("MCP_SERVERS_CONFIG", None)
+        old_cwd = os.getcwd()
+        empty_dir = Path(tempfile.mkdtemp())
+        try:
+            os.chdir(empty_dir)
+            configs = load_mcp_server_configs(path=None)
+            self.assertEqual(len(configs), 1)
+            self.assertEqual(configs[0].name, "mcp_fs")
+            self.assertTrue(configs[0].enabled)
+            self.assertTrue(configs[0].cwd_from_repo_root)
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(empty_dir, ignore_errors=True)
+            if old_env is not None:
+                os.environ["MCP_SERVERS_CONFIG"] = old_env
+
+    def test_loads_explicit_config_file(self):
+        from agent_mcp.config import load_mcp_server_configs
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            cfg_path = tmp / "servers.json"
+            cfg_path.write_text(json.dumps([
+                {"name": "a", "command": "echo", "args": ["1"], "enabled": True},
+                {"name": "b", "command": "echo", "args": ["2"], "enabled": False},
+            ]))
+            configs = load_mcp_server_configs(path=str(cfg_path))
+            self.assertEqual(len(configs), 2)
+            self.assertEqual(configs[0].namespace, "a")  # defaults to name when unset
+            self.assertFalse(configs[1].enabled)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_missing_explicit_config_raises(self):
+        from agent_mcp.config import load_mcp_server_configs
+        with self.assertRaises(FileNotFoundError):
+            load_mcp_server_configs(path="/nonexistent/path/servers.json")
+
+    def test_malformed_config_raises_value_error(self):
+        from agent_mcp.config import load_mcp_server_configs
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            cfg_path = tmp / "bad.json"
+            cfg_path.write_text("not json")
+            with self.assertRaises(ValueError):
+                load_mcp_server_configs(path=str(cfg_path))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_filter_tool_map_allow_list(self):
+        from agent_mcp.config import filter_tool_map, MCPServerConfig
+        cfg = MCPServerConfig(name="fs", command="x", namespace="fs", allowed_tools=["read_file"])
+        tool_map = {"fs__read_file": 1, "fs__write_file": 2, "fs__delete_file": 3}
+        filtered = filter_tool_map(tool_map, cfg)
+        self.assertEqual(set(filtered.keys()), {"fs__read_file"})
+
+    def test_filter_tool_map_deny_list_applies_without_allow_list(self):
+        from agent_mcp.config import filter_tool_map, MCPServerConfig
+        cfg = MCPServerConfig(name="fs", command="x", namespace="fs", denied_tools=[r"delete_.*", r"^move_"])
+        tool_map = {"fs__read_file": 1, "fs__delete_file": 2, "fs__move_file": 3}
+        filtered = filter_tool_map(tool_map, cfg)
+        self.assertEqual(set(filtered.keys()), {"fs__read_file"})
+
+    def test_filter_tool_map_allow_and_deny_combine(self):
+        from agent_mcp.config import filter_tool_map, MCPServerConfig
+        # denied_tools still applies even when the tool passed the allow-list --
+        # deny always wins.
+        cfg = MCPServerConfig(
+            name="fs", command="x", namespace="fs",
+            allowed_tools=["read_file", "delete_file"], denied_tools=[r"delete_.*"],
+        )
+        tool_map = {"fs__read_file": 1, "fs__delete_file": 2}
+        filtered = filter_tool_map(tool_map, cfg)
+        self.assertEqual(set(filtered.keys()), {"fs__read_file"})
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 11. RAG Knowledge Base Tests
@@ -1031,6 +1642,234 @@ class TestRAGKnowledgeBase(unittest.TestCase):
         chunk_types = {c.chunk_type for c in chunks}
         self.assertIn("tool_summary", chunk_types)
         self.assertIn("skill_summary", chunk_types)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. Structured Logging Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestLoggingSetup(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="agent_logs_"))
+        self._orig_log_dir = __import__("os").environ.get("AGENT_LOG_DIR")
+        __import__("os").environ["AGENT_LOG_DIR"] = str(self.tmp)
+        # Force re-configuration against the temp dir for this test.
+        import core.logging_setup as logging_setup
+        logging_setup._configured = False
+        import logging as _logging
+        _logging.getLogger(logging_setup._LOGGER_NAME).handlers.clear()
+
+    def tearDown(self):
+        import os as _os
+        if self._orig_log_dir is None:
+            _os.environ.pop("AGENT_LOG_DIR", None)
+        else:
+            _os.environ["AGENT_LOG_DIR"] = self._orig_log_dir
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_log_event_writes_json_line(self):
+        from core.logging_setup import log_event
+        log_event("unit_test_event", run_id="abc123", tool="read_file", success=True)
+
+        log_file = self.tmp / "agent-events.jsonl"
+        self.assertTrue(log_file.exists())
+
+        lines = log_file.read_text(encoding="utf-8").strip().splitlines()
+        record = json.loads(lines[-1])
+        self.assertEqual(record["event"], "unit_test_event")
+        self.assertEqual(record["run_id"], "abc123")
+        self.assertEqual(record["tool"], "read_file")
+        self.assertTrue(record["success"])
+        self.assertIn("ts", record)
+        self.assertIn("level", record)
+
+    def test_timed_context_manager_measures_duration(self):
+        from core.logging_setup import timed
+        with timed() as t:
+            pass
+        self.assertIsNotNone(t.duration_ms)
+        self.assertGreaterEqual(t.duration_ms, 0)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 13. Federated Retrieval Tests (memory recall + cross-source rerank)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _FakeEmbedder:
+    """
+    Deterministic, dependency-free stand-in for CodeEmbedder. Hashes words
+    into a small fixed-size vector (a bag-of-words hashing trick) so texts
+    sharing vocabulary score higher via cosine similarity -- without loading
+    a real sentence-transformers model, keeping these tests fast.
+
+    Uses zlib.crc32, not Python's built-in hash(): hash() on strings is
+    salted with a random seed per process (PYTHONHASHSEED), so word->bucket
+    assignments -- and therefore which test cases pass -- would silently
+    vary from run to run despite this class's own docstring claiming
+    "deterministic". crc32 is stable across processes.
+    """
+    DIM = 32
+
+    def _vec(self, text: str):
+        import numpy as np
+        import zlib
+        v = np.zeros(self.DIM, dtype="float32")
+        for word in text.lower().split():
+            v[zlib.crc32(word.encode()) % self.DIM] += 1.0
+        norm = float(np.linalg.norm(v))
+        return v / norm if norm > 0 else v
+
+    def embed_texts(self, texts):
+        import numpy as np
+        if not texts:
+            return np.empty((0, self.DIM), dtype="float32")
+        return np.stack([self._vec(t) for t in texts])
+
+    def embed_query(self, query):
+        import numpy as np
+        return np.stack([self._vec(query)])
+
+
+class TestMemoryRecallCandidates(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.memory = AgentMemory(persist_dir=str(self.tmp))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_empty_memory_returns_no_candidates(self):
+        results = self.memory.recall_candidates("anything", embedder=_FakeEmbedder())
+        self.assertEqual(results, [])
+
+    def test_ranks_by_similarity_to_query(self):
+        self.memory.add_insight("the executor runs tools and steps")
+        self.memory.add_insight("completely unrelated note about weather")
+        results = self.memory.recall_candidates("executor tools", top_k=2, embedder=_FakeEmbedder())
+        self.assertEqual(results[0]["content"], "the executor runs tools and steps")
+        self.assertEqual(results[0]["source"], "memory")
+        self.assertIn("chunk_id", results[0])
+
+    def test_skips_inactive_items(self):
+        self.memory.add_insight("a note")
+        self.memory.long_term[0].status = "stale"
+        results = self.memory.recall_candidates("note", embedder=_FakeEmbedder())
+        self.assertEqual(results, [])
+
+
+class TestApplyRelevanceFloor(unittest.TestCase):
+    """RAGEngine.apply_relevance_floor(), tested without loading any model."""
+
+    def test_passthrough_without_cross_encoder(self):
+        from rag.retrieve import RAGEngine
+        engine = RAGEngine.__new__(RAGEngine)  # skip __init__ -- no model loading needed
+        engine._cross_encoder = None
+        reranked = [{"rerank_score": -10.0}]
+        result = engine.apply_relevance_floor(reranked, min_score=-4.0)
+        self.assertEqual(result, reranked)
+
+    def test_filters_below_threshold(self):
+        from rag.retrieve import RAGEngine
+        engine = RAGEngine.__new__(RAGEngine)
+        engine._cross_encoder = object()  # any non-None sentinel
+        reranked = [{"rerank_score": 2.0}, {"rerank_score": -10.0}]
+        result = engine.apply_relevance_floor(reranked, min_score=-4.0)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["rerank_score"], 2.0)
+
+    def test_keeps_top1_flagged_when_all_below_threshold(self):
+        from rag.retrieve import RAGEngine
+        engine = RAGEngine.__new__(RAGEngine)
+        engine._cross_encoder = object()
+        reranked = [{"rerank_score": -10.0}, {"rerank_score": -20.0}]
+        result = engine.apply_relevance_floor(reranked, min_score=-4.0)
+        self.assertEqual(len(result), 1)
+        self.assertTrue(result[0]["_low_relevance"])
+
+
+class _StubRAGEngine:
+    """Duck-typed RAGEngine stand-in for FederatedRetriever tests."""
+
+    def __init__(self, code_results, cross_encoder=None):
+        self._code_results = code_results
+        self._cross_encoder = cross_encoder
+
+    def hybrid_recall(self, query, vector_top_k, keyword_top_k):
+        return [dict(r) for r in self._code_results]
+
+    def rerank(self, query, candidates, top_k):
+        out = []
+        for i, c in enumerate(candidates):
+            d = dict(c)
+            d["rerank_score"] = len(candidates) - i  # preserve input order, descending
+            out.append(d)
+        return out[:top_k]
+
+    def apply_relevance_floor(self, reranked, min_score):
+        if self._cross_encoder is not None and min_score is not None and reranked:
+            filtered = [r for r in reranked if r.get("rerank_score", 0.0) >= min_score]
+            if filtered:
+                return filtered
+            return [dict(reranked[0], _low_relevance=True)]
+        return reranked
+
+    def format_context(self, results, max_chars_per_chunk=1400):
+        return f"stub-context({len(results)} results)"
+
+
+class _StubMemory:
+    def __init__(self, candidates):
+        self._candidates = candidates
+
+    def recall_candidates(self, query, top_k=5):
+        return [dict(c) for c in self._candidates[:top_k]]
+
+
+class TestFederatedRetriever(unittest.TestCase):
+
+    def test_merges_and_tags_sources(self):
+        from rag.federated import FederatedRetriever
+        code = [{"chunk_id": "c1", "content": "code chunk"}]
+        mem = [{"chunk_id": "m1", "content": "memory chunk"}]
+        retriever = FederatedRetriever(rag_engine=_StubRAGEngine(code), memory=_StubMemory(mem))
+
+        results = retriever.retrieve("query", top_k=5, min_score=None)
+
+        source_types = {r["source_type"] for r in results}
+        self.assertEqual(source_types, {"repo", "memory"})
+
+    def test_no_memory_source_when_memory_is_none(self):
+        from rag.federated import FederatedRetriever
+        code = [{"chunk_id": "c1", "content": "code chunk"}]
+        retriever = FederatedRetriever(rag_engine=_StubRAGEngine(code), memory=None)
+
+        results = retriever.retrieve("query", min_score=None)
+
+        self.assertTrue(all(r["source_type"] == "repo" for r in results))
+
+    def test_empty_when_no_candidates(self):
+        from rag.federated import FederatedRetriever
+        retriever = FederatedRetriever(rag_engine=_StubRAGEngine([]), memory=_StubMemory([]))
+
+        self.assertEqual(retriever.retrieve("query"), [])
+
+    def test_applies_relevance_floor_across_merged_pool(self):
+        from rag.federated import FederatedRetriever
+        code = [{"chunk_id": "c1", "content": "irrelevant"}]
+        mem = [{"chunk_id": "m1", "content": "also irrelevant"}]
+        # rerank_score for these two candidates will be 2 and 1 (stub assigns
+        # descending scores by input order); min_score=1.5 should drop the
+        # second one but keep the merged pool's ordering intact.
+        retriever = FederatedRetriever(
+            rag_engine=_StubRAGEngine(code, cross_encoder=object()), memory=_StubMemory(mem)
+        )
+
+        results = retriever.retrieve("query", min_score=1.5)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["source_type"], "repo")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -7,10 +7,17 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # loads .env from the current/parent dirs into os.environ, if present -- no-op otherwise
+except ImportError:
+    pass
+
 from core.state import AgentState, RunStatus, ValidationStatus
 from core.planner import Planner
 from core.executor import Executor
 from core.memory import AgentMemory
+from core.logging_setup import log_event
 from tools.tools import get_tool_map
 from llm import create_local_llm_client
 
@@ -49,6 +56,52 @@ def _bound_task_description(task_description: str) -> str:
     )
 
 
+def _load_mcp_tools(repo_root: str) -> tuple:
+    """
+    Connect to every enabled server in the MCP config (mcp_servers.json /
+    $MCP_SERVERS_CONFIG, falling back to the single built-in filesystem
+    server -- see agent_mcp/config.py) and return (tools, configs): their
+    merged, allow/deny-filtered tool maps namespaced per server, plus the
+    config list itself so the caller can build a ToolRegistry (which needs
+    each config's declared tool categories -- see tools/registry.py).
+
+    Each server gets its own get_shared_mcp_client() connection, reused
+    across calls for the same (command, args, namespace, cwd) -- one server
+    being unreachable doesn't take the others down with it.
+    """
+    from agent_mcp.client import get_shared_mcp_client
+    from agent_mcp.config import load_mcp_server_configs, filter_tool_map
+
+    tools: dict = {}
+
+    try:
+        configs = load_mcp_server_configs()
+    except Exception as e:
+        print(f"[!] Failed to load MCP server config: {e}")
+        return tools, []
+
+    for cfg in configs:
+        if not cfg.enabled:
+            continue
+        try:
+            # cwd_from_repo_root: some servers (e.g. the filesystem server)
+            # resolve relative args like "." against the subprocess's own
+            # working directory, so that must be the repo being worked on --
+            # not wherever this process happened to be launched from.
+            client = get_shared_mcp_client(
+                command=cfg.command,
+                args=cfg.args,
+                namespace=cfg.namespace,
+                cwd=repo_root if cfg.cwd_from_repo_root else None,
+            )
+            server_tools = filter_tool_map(client.get_tool_map(), cfg)
+            tools.update(server_tools)
+        except Exception as e:
+            print(f"[!] MCP server '{cfg.name}' unavailable: {e}")
+
+    return tools, configs
+
+
 def run_agent(
     task_description: str,
     repo_root: str,
@@ -65,24 +118,41 @@ def run_agent(
         input_query=_bound_task_description(task_description),
         repo_root=repo_root,
     )
+    # AgentState.run_id defaults to its own fresh uuid4 — without this, tool-call
+    # log events (keyed on state.run_id) would use a different id than the
+    # run_id this function returns / the API exposes at /api/run/{run_id},
+    # making it impossible to correlate structured logs back to a specific run.
+    state.run_id = run_id
     state.started_at = started_at
 
     tools = get_tool_map()
     namespace = AgentMemory.namespace_for(repo_root, session_id)
     memory = AgentMemory(persist_dir=str(Path(".agent_memory")/namespace))
+    # Lets tools/tools.py's retrieve_context() include this session's memory
+    # in its recall pool (rag/federated.py's FederatedRetriever) without
+    # threading a `memory` param through every tool call.
+    state.metadata["agent_memory"] = memory
 
-    try:
-        from agent_mcp.client import MCPToolClient
-        mcp = MCPToolClient(command="npx", args=["-y", "@modelcontextprotocol/server-filesystem", "."], namespace="mcp_fs")
-        tools.update(mcp.get_tool_map())
-    except Exception as e:
-        print(f"[!] MCP tools unavailable: {e}")
+    mcp_tools, mcp_configs = _load_mcp_tools(state.repo_root)
+    tools.update(mcp_tools)
 
-    planner = Planner(client=client)
+    from tools.registry import ToolRegistry
+    tool_registry = ToolRegistry.build(tools, mcp_configs)
+
+    planner = Planner(client=client, tool_registry=tool_registry)
     executor = Executor(
         client=client,
         tools=tools,
         memory=memory,
+        tool_registry=tool_registry,
+    )
+
+    log_event(
+        "run_started",
+        run_id=run_id,
+        session_id=session_id,
+        repo_root=state.repo_root,
+        task=state.input_query[:200],
     )
 
     planner.create_initial_plan(state)
@@ -106,10 +176,14 @@ def run_agent(
         current_step = state.get_current_step()
 
         if current_step is None:
-            state.run_status = RunStatus.COMPLETED
+            if state.has_unresolved_failures():
+                state.run_status = RunStatus.FAILED
+                state.stop_reason = "step_retry_exhausted"
+            else:
+                state.run_status = RunStatus.COMPLETED
             state.final_answer = executor._build_final_answer(state)
             break
-        
+
         elapsed = time.time() - started_at
         if elapsed >= state.budget.deadline_seconds:
             state.run_status = RunStatus.FAILED
@@ -180,12 +254,39 @@ def run_agent(
 
     state.finished_at = time.time()
 
+    log_event(
+        "run_finished",
+        run_id=run_id,
+        session_id=session_id,
+        run_status=state.run_status.value,
+        stop_reason=state.stop_reason,
+        validation=state.validation_status.value,
+        replan_count=state.replan_count,
+        tool_call_count=len(state.tool_history),
+        files_modified=len(state.files_modified),
+        elapsed_ms=round((state.finished_at - started_at) * 1000, 2),
+    )
+
     if step_callback:
+        # Field set matches api/server.py's _runs[run_id]["result"] shape --
+        # they used to differ (this one was missing steps_completed/
+        # steps_total/stop_reason/tool_call_count), so the SSE "done" event
+        # the frontend renders live and the polled /api/run/{id} result
+        # disagreed on what fields existed. fillAgentBubble() in
+        # api/static/index.html reads steps_completed/steps_total from
+        # whichever "done" payload it's handed, so this was a real bug, not
+        # just an inconsistency: every live-streamed run showed "undefined /
+        # undefined steps" in the UI.
         step_callback("done", {
             "validation": state.validation_status.value,
             "run_status": state.run_status.value,
-            "files_modified": state.files_modified,
+            "stop_reason": state.stop_reason,
             "replan_count": state.replan_count,
+            "tool_call_count": len(state.tool_history),
+            "steps_completed": sum(1 for s in state.plan if s.status.value == "completed"),
+            "steps_total": len(state.plan),
+            "files_modified": state.files_modified,
+            "files_read": state.files_read,
             "elapsed_s": round(state.finished_at - started_at, 2),
             "final_answer": state.final_answer or "",
         })

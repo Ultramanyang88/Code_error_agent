@@ -173,7 +173,7 @@ class AgentState:
         root = Path(self.repo_root).resolve()
         target = (root / relative_path).resolve()
 
-        if not str(target).startswith(str(root)):
+        if target != root and root not in target.parents:
             raise ValueError(f"Unsafe path outside repo root: {relative_path}")
 
         return target
@@ -187,6 +187,21 @@ class AgentState:
                 if step.retry_count <= self.budget.max_step_retries:
                     return step
         return None
+
+    def has_unresolved_failures(self) -> bool:
+        """
+        True if any step is stuck in FAILED with its retries exhausted.
+
+        get_current_step() silently skips these steps once retry_count exceeds
+        max_step_retries, so the run can reach "no current step" with a step
+        that never actually succeeded. Callers should treat that as a failed
+        run, not a completed one.
+        """
+        return any(
+            step.status == StepStatus.FAILED
+            and step.retry_count > self.budget.max_step_retries
+            for step in self.plan
+        )
 
     def add_tool_result(self, result: ToolResult) -> None:
         self.tool_history.append(result)

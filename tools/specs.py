@@ -1,10 +1,26 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
+
+# Category taxonomy for the built-in tools. This lets tool discovery work at
+# two granularities (matches how the knowledge-base chunks are organized in
+# rag/indexer.py): a step can be routed to a category first ("this step
+# mutates files"), then narrowed to the specific tool within it -- instead of
+# every prompt having to list every registered tool's full description.
+# Categories are deliberately coarse and stable; add new tools to an existing
+# category where they fit rather than inventing a new one for each tool.
+TOOL_CATEGORIES: Dict[str, str] = {
+    "inspection": "Read-only exploration of the repository: list directories, read files, grep/regex search.",
+    "context": "Semantic, whole-repository retrieval (RAG) for questions that aren't a known file/exact symbol.",
+    "mutation": "Changes to repository files: create, patch, or replace content.",
+    "execution": "Runs commands or tests inside the repository and reports the result.",
+    "diagnostics": "Analyzes an error/diff after the fact rather than changing or reading arbitrary files.",
+}
 
 TOOL_SPECS: Dict[str, Dict[str, Any]] = {
     "list_files": {
+        "category": "inspection",
         "description": "List files under the repository root.",
         "when_to_use": [
             "Use this at the beginning to understand repository structure.",
@@ -36,6 +52,7 @@ TOOL_SPECS: Dict[str, Dict[str, Any]] = {
     },
 
     "read_file": {
+        "category": "inspection",
         "description": "Read a file from the repository.",
         "when_to_use": [
             "Use this when you know the exact file path.",
@@ -68,6 +85,7 @@ TOOL_SPECS: Dict[str, Dict[str, Any]] = {
     },
 
     "search_code": {
+        "category": "inspection",
         "description": "Search repository files using keyword or regex.",
         "when_to_use": [
             "Use this to find class names, function names, imports, config keys, or error messages.",
@@ -104,6 +122,7 @@ TOOL_SPECS: Dict[str, Dict[str, Any]] = {
     },
 
     "write_file": {
+        "category": "mutation",
         "description": "Write full content to a repository file.",
         "when_to_use": [
             "Use this to create a new file.",
@@ -134,6 +153,7 @@ TOOL_SPECS: Dict[str, Dict[str, Any]] = {
     },
 
     "replace_in_file": {
+        "category": "mutation",
         "description": "Replace exact text inside a file.",
         "when_to_use": [
             "Use this for small focused edits.",
@@ -169,6 +189,7 @@ TOOL_SPECS: Dict[str, Dict[str, Any]] = {
     },
 
     "apply_patch": {
+        "category": "mutation",
         "description": "Apply a unified diff patch to repository files.",
         "when_to_use": [
             "Use this for multi-line code edits.",
@@ -190,6 +211,7 @@ TOOL_SPECS: Dict[str, Dict[str, Any]] = {
     },
 
     "run_command": {
+        "category": "execution",
         "description": "Run a safe shell command inside the repository.",
         "when_to_use": [
             "Use this for syntax checks, tests, linting, or dependency inspection.",
@@ -216,6 +238,7 @@ TOOL_SPECS: Dict[str, Dict[str, Any]] = {
     },
 
     "run_tests": {
+        "category": "execution",
         "description": "Run tests or a basic Python syntax validation.",
         "when_to_use": [
             "Use after code changes.",
@@ -241,6 +264,7 @@ TOOL_SPECS: Dict[str, Dict[str, Any]] = {
     },
 
     "identify_error": {
+        "category": "diagnostics",
         "description": "Analyze traceback or command output and identify likely root cause.",
         "when_to_use": [
             "Use after run_tests or run_command fails.",
@@ -260,6 +284,7 @@ TOOL_SPECS: Dict[str, Dict[str, Any]] = {
     },
 
     "git_diff": {
+        "category": "diagnostics",
         "description": "Show current git diff.",
         "when_to_use": [
             "Use after edits to summarize changes.",
@@ -273,6 +298,7 @@ TOOL_SPECS: Dict[str, Dict[str, Any]] = {
     },
 
     "retrieve_context": {
+        "category": "context",
         "description": "Retrieve relevant repository context using FAISS-based hybrid RAG.",
         "when_to_use": [
             "Use this when the relevant file is unknown.",
@@ -308,6 +334,60 @@ TOOL_SPECS: Dict[str, Dict[str, Any]] = {
 
 def get_tool_specs() -> Dict[str, Dict[str, Any]]:
     return TOOL_SPECS
+
+
+def category_of(tool_name: str) -> Optional[str]:
+    """Category for a built-in tool, or None for unknown/external tools (e.g. MCP)."""
+    spec = TOOL_SPECS.get(tool_name)
+    return spec.get("category") if spec else None
+
+
+def tools_by_category() -> Dict[str, List[str]]:
+    """category -> [tool names], in TOOL_SPECS insertion order."""
+    grouped: Dict[str, List[str]] = {c: [] for c in TOOL_CATEGORIES}
+    for name, spec in TOOL_SPECS.items():
+        grouped.setdefault(spec.get("category", "uncategorized"), []).append(name)
+    return grouped
+
+
+def expand_by_category(tool_names: List[str], available: Optional[List[str]] = None) -> List[str]:
+    """
+    Given a seed list of tool names (e.g. a plan step's suggested_tools),
+    return that list plus every other built-in tool that shares a category
+    with at least one seed tool. Tools with no known category (unrecognized
+    names, MCP tools) pass through unchanged if present in `available`.
+
+    This is how a step narrows "which tools should the executor even be told
+    about" down from the full registry to just the relevant category/ies,
+    instead of dumping every tool's description into every prompt.
+    """
+    categories = {c for c in (category_of(n) for n in tool_names) if c}
+    if not categories:
+        return list(dict.fromkeys(tool_names))  # nothing recognized -> no expansion
+
+    expanded = list(tool_names)
+    for name, spec in TOOL_SPECS.items():
+        if spec.get("category") in categories and name not in expanded:
+            expanded.append(name)
+
+    if available:
+        # keep any explicitly-available tools we don't have categories for
+        # (e.g. mcp_fs__read_file) rather than silently dropping them
+        for name in tool_names:
+            if name in available and name not in expanded:
+                expanded.append(name)
+
+    return list(dict.fromkeys(expanded))
+
+
+def category_summary_text(category: str) -> str:
+    """One knowledge-base chunk's worth of text describing a tool category."""
+    purpose = TOOL_CATEGORIES.get(category, "")
+    names = tools_by_category().get(category, [])
+    lines = [f"Tool category: {category}", f"Purpose: {purpose}", "Tools in this category:"]
+    for name in names:
+        lines.append(f"- {name}: {TOOL_SPECS[name].get('description', '')}")
+    return "\n".join(lines)
 
 def to_openai_tools(tool_names: List[str] | None=None) ->List[Dict[str, Any]]:
     """

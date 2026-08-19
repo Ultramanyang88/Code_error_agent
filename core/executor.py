@@ -6,9 +6,11 @@ import re
 import traceback
 
 from .state import AgentState, PlanStep, RunStatus, StepStatus, ToolResult
-from tools.specs import TOOL_SPECS, to_openai_tools
+from tools.specs import TOOL_SPECS, to_openai_tools, expand_by_category
+from tools.registry import ToolRegistry
 from skills.registry import SkillRegistry
 from .memory import AgentMemory
+from .logging_setup import log_event, timed
 
 
 class Executor:
@@ -29,13 +31,19 @@ class Executor:
         tools: Optional[Dict[str, Any]] = None,
         memory: Optional[AgentMemory] = None,
         max_tool_rounds: int = 4,
-        skills_dir: str= "skills"
+        skills_dir: str= "skills",
+        tool_registry: Optional[ToolRegistry] = None,
     ):
         self.client = client
         self.tools = tools or {}
         self.memory = memory or AgentMemory()
         self.max_tool_rounds = max_tool_rounds
         self.skill_registry = SkillRegistry(skills_dir=skills_dir)
+        # Optional: when given, category expansion (which tools to show for a
+        # step's suggested_tools) is category/MCP-aware -- see
+        # tools/registry.py. None falls back to the static, built-in-only
+        # expand_by_category() imported above.
+        self.tool_registry = tool_registry
     
     def _validate_tool_arg(
             self,
@@ -61,7 +69,11 @@ class Executor:
         current_step = state.get_current_step()
 
         if current_step is None:
-            state.run_status = RunStatus.COMPLETED
+            if state.has_unresolved_failures():
+                state.run_status = RunStatus.FAILED
+                state.stop_reason = "step_retry_exhausted"
+            else:
+                state.run_status = RunStatus.COMPLETED
             state.final_answer = self._build_final_answer(state)
             return state
 
@@ -153,6 +165,7 @@ class Executor:
         messages = self._build_messages(step, state)
         final_outputs: List[str] = []
         tool_schema = to_openai_tools(list(self.tools.keys()))
+        used_tools: set[str] = set()
 
         for round_idx in range(self.max_tool_rounds):
             response = self.client.chat(messages, tools=tool_schema)
@@ -171,6 +184,7 @@ class Executor:
             step.tool_results.append(tool_result)
             state.add_tool_result(tool_result)
             self.memory.update_from_tool_result(tool_result)
+            used_tools.add(tool_result.tool_name)
 
             if tool_call.get("raw"):
                 messages.append(
@@ -204,7 +218,7 @@ class Executor:
 
             final_outputs.append(tool_result.to_text(max_chars=1500))
 
-            if self._tool_result_is_enough(step, tool_result):
+            if self._tool_result_is_enough(step, tool_result, used_tools=used_tools):
                 break
 
         return "\n\n".join(final_outputs) if final_outputs else "No output produced."
@@ -378,6 +392,14 @@ class Executor:
         schema_error = self._validate_tool_arg(tool_name, arguments)
         if schema_error:
             print(f"    ✗ [SCHEMA] {tool_name}: {schema_error}")
+            log_event(
+                "tool_call",
+                run_id=state.run_id,
+                tool=tool_name,
+                success=False,
+                duration_ms=0.0,
+                error=f"schema_validation_failed: {schema_error}",
+            )
             return ToolResult(
                 tool_name=tool_name,
                 success=False,
@@ -389,38 +411,42 @@ class Executor:
 
         tool_fn = self.tools[tool_name]
 
-        try:
-            result = tool_fn(state=state, **arguments)
+        with timed() as t:
+            try:
+                result = tool_fn(state=state, **arguments)
 
-            if isinstance(result, ToolResult):
-                self._log_tool_result(result)
-                return result
+                if isinstance(result, ToolResult):
+                    r = result
+                elif isinstance(result, dict):
+                    r = ToolResult(
+                        tool_name=tool_name,
+                        success=bool(result.get("success", True)),
+                        output=str(result.get("output", "")),
+                        error=result.get("error"),
+                        metadata=result.get("metadata", {}),
+                    )
+                else:
+                    r = ToolResult(tool_name=tool_name, success=True, output=str(result))
 
-            if isinstance(result, dict):
+            except Exception as exc:
                 r = ToolResult(
                     tool_name=tool_name,
-                    success=bool(result.get("success", True)),
-                    output=str(result.get("output", "")),
-                    error=result.get("error"),
-                    metadata=result.get("metadata", {}),
+                    success=False,
+                    output="",
+                    error=f"{type(exc).__name__}: {str(exc)}",
+                    metadata={"tool_name": tool_name, "arguments": arguments},
                 )
-                self._log_tool_result(r)
-                return r
 
-            r = ToolResult(tool_name=tool_name, success=True, output=str(result))
-            self._log_tool_result(r)
-            return r
-
-        except Exception as exc:
-            r = ToolResult(
-                tool_name=tool_name,
-                success=False,
-                output="",
-                error=f"{type(exc).__name__}: {str(exc)}",
-                metadata={"tool_name": tool_name, "arguments": arguments},
-            )
-            self._log_tool_result(r)
-            return r
+        self._log_tool_result(r)
+        log_event(
+            "tool_call",
+            run_id=state.run_id,
+            tool=tool_name,
+            success=r.success,
+            duration_ms=t.duration_ms,
+            error=(r.error or "")[:500] if not r.success else None,
+        )
+        return r
 
     def _log_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> None:
         key_args = {k: v for k, v in arguments.items()
@@ -615,7 +641,7 @@ Available skills:
 {skills_text}
 
 Available tools:
-{self._tool_descriptions()}
+{self._tool_descriptions(step.suggested_tools)}
 
 Instructions:
 - Complete the current step only.
@@ -666,12 +692,38 @@ Tool-call JSON schema:
 If the current step is fully complete and no more tool call is needed, return a concise final message.
 """.strip()
 
-    def _tool_descriptions(self) -> str:
+    def _tool_descriptions(self, suggested_tools: Optional[List[str]] = None) -> str:
+        """
+        List available tools for the prompt.
+
+        When the step already has suggested_tools (from the planner), narrow
+        the listing to those tools' categories instead of dumping every
+        registered tool (including every MCP tool) into every single step's
+        prompt. suggested_tools may be concrete tool names and/or bare
+        category names (the planner only ever sees category summaries when a
+        tool_registry is set -- see Planner._available_tools_prompt_block).
+        Uses the category/MCP-aware ToolRegistry when one was given,
+        otherwise the static built-in-only expand_by_category(). Falls back
+        to the full tool list when there's nothing to narrow from, so
+        behavior is unchanged for steps the planner didn't give a hint for.
+        """
         if not self.tools:
             return "No tools are currently registered."
 
+        names = list(self.tools.keys())
+        if suggested_tools:
+            if self.tool_registry:
+                narrowed = self.tool_registry.expand_by_category(suggested_tools)
+            else:
+                narrowed = expand_by_category(suggested_tools, available=names)
+            # Only narrow if it actually recognized something; otherwise fall
+            # back to the full list rather than silently showing nothing.
+            if narrowed:
+                names = [n for n in narrowed if n in self.tools] or names
+
         lines = []
-        for name, fn in self.tools.items():
+        for name in names:
+            fn = self.tools[name]
             doc = getattr(fn, "__doc__", "") or ""
             doc = doc.strip().replace("\n", " ")
             lines.append(f"- {name}: {doc[:220]}")
@@ -828,7 +880,7 @@ If the current step is fully complete and no more tool call is needed, return a 
 
         # Last test outcome
         if state.test_results:
-            evidence_lines.append("Last test output: " + state.test_results[-1][:300])
+            evidence_lines.append("Last test output: " + state.test_results[-1].to_text(max_chars=300))
 
         # Step outcomes (just task + status, no raw output)
         step_lines = []

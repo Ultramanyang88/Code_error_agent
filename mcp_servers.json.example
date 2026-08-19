@@ -1,0 +1,32 @@
+[
+  {
+    "name": "mcp_fs",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+    "namespace": "mcp_fs",
+    "enabled": true,
+    "cwd_from_repo_root": true,
+    "category": "inspection",
+    "denied_tools": ["delete_.*", "move_.*"]
+  },
+
+  {
+    "_comment": "Example: adds git-workflow tools (branch/commit/PR) via the official GitHub MCP server. This is the concrete gap that keeps a bug-fix-only agent from delivering a real feature: apply_patch changes files locally, but nothing built-in turns that into a mergeable PR. Copy this block into your own mcp_servers.json, set enabled=true, and export a token the server can read (see its own docs) to wire it up.",
+    "name": "github",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "namespace": "gh",
+    "enabled": false,
+    "category": "vcs",
+    "category_purpose": "Git hosting operations: issues, PRs, reviews -- lets the planner route feature/fix delivery steps here instead of stopping at a local diff.",
+    "tool_categories": {
+      "create_pull_request": "mutation",
+      "merge_pull_request": "mutation"
+    },
+    "allowed_tools": [
+      "search_issues", "get_issue", "get_pull_request", "list_pull_requests",
+      "create_pull_request", "create_issue_comment", "get_file_contents"
+    ],
+    "denied_tools": ["delete_.*", "delete_repository"]
+  }
+]

@@ -12,6 +12,34 @@ import textwrap
 
 from collections import OrderedDict
 from core.state import AgentState, ToolResult
+import uuid
+
+
+def _exec_command(root: Path, command: str, timeout: int) -> "tuple[int, str, str]":
+    """
+    Run `command` with cwd=root: inside this repo's persistent, network-
+    disabled sandbox container when $AGENT_SANDBOX_ENABLED is set and Docker
+    is reachable (see sandbox/docker_sandbox.py), otherwise directly on the
+    host. Falls back to host execution on any sandbox error rather than
+    failing the call -- sandboxing is a hardening layer, not something a
+    Docker hiccup should be able to take the whole tool down over.
+
+    Returns (exit_code, stdout, stderr). Raises subprocess.TimeoutExpired
+    only on the host-execution path (the sandbox path reports timeouts as a
+    (-1, "", message) result instead of raising).
+    """
+    from sandbox.docker_sandbox import is_sandbox_enabled, is_docker_available
+
+    if is_sandbox_enabled() and is_docker_available():
+        try:
+            from sandbox.docker_sandbox import get_shared_sandbox
+            sandbox = get_shared_sandbox(str(root))
+            return sandbox.exec(command, timeout=timeout)
+        except Exception as e:
+            print(f"[!] Sandbox exec failed ({e}); falling back to host execution for this call.")
+
+    proc = subprocess.run(command, cwd=root, shell=True, capture_output=True, text=True, timeout=timeout)
+    return proc.returncode, proc.stdout, proc.stderr
 
 # tool list:list_files, read_file, search_code, retrieve_context, write_file, replace_in_file, apply_patch, run_command, run_tests, identify_error, git_diff
 
@@ -74,8 +102,16 @@ TEXT_FILE_EXTENSIONS = {
     ".h",
 }
 
+# NOTE: this is a denylist, not a sandbox. It catches literal, well-known
+# patterns only and cannot catch every way to express the same intent
+# (e.g. `rm -r -f`, piping into an interpreter other than bash/sh, writing a
+# script to disk before executing it). Treat run_command as unsafe to expose
+# to untrusted repository content (README/code comments can prompt-inject the
+# planner) unless it also runs inside a sandboxed/network-isolated environment.
 DANGEROUS_COMMAND_PATTERNS = [
-    r"\brm\s+-rf\b",
+    r"\brm\s+(-\w*r\w*f\w*|-\w*f\w*r\w*)(\s|$)",  # rm -rf, rm -fr (combined flags)
+    r"\brm\b(?:\s+-\S+){0,4}\s+-\w*r\w*\b(?:\s+-\S+){0,4}\s+-\w*f\w*\b",  # rm -r ... -f (either order)
+    r"\brm\b(?:\s+-\S+){0,4}\s+-\w*f\w*\b(?:\s+-\S+){0,4}\s+-\w*r\w*\b",
     r"\bsudo\b",
     r"\bshutdown\b",
     r"\breboot\b",
@@ -85,8 +121,11 @@ DANGEROUS_COMMAND_PATTERNS = [
     r">\s*/dev/sd[a-z]",
     r"\bchmod\s+-R\s+777\b",
     r"\bchown\s+-R\b",
-    r"\bcurl\b.*\|\s*(bash|sh)",
-    r"\bwget\b.*\|\s*(bash|sh)",
+    r"\b(curl|wget)\b[^|;&\n]*\|\s*(sudo\s+)?(bash|sh|zsh|python3?|perl|ruby|node)\b",
+    r"\b(curl|wget)\b.*-o\s*\S+\.(sh|py)\b",  # download-then-execute two-step pattern
+    r"\bpython[23]?\s+-c\s+.*\b(os\.system|subprocess|shutil\.rmtree)\b",
+    r"\beval\s*\(",
+    r">\s*/etc/",
 ]
 
 
@@ -286,6 +325,19 @@ def read_file(
         lines = content.splitlines()
 
         total_lines = len(lines)
+
+        if total_lines == 0:
+            return ToolResult(
+                tool_name="read_file",
+                success=True,
+                output="(empty file)",
+                metadata={
+                    "path": path,
+                    "start_line": 0,
+                    "end_line": 0,
+                    "total_lines": 0,
+                },
+            )
 
         if start_line is None:
             start_line = 1
@@ -548,7 +600,8 @@ def apply_patch(
     patch: str,
 ) -> ToolResult:
     """
-    Apply a unified diff patch using git apply.
+    Apply a unified diff patch using git apply. Runs inside this repo's
+    sandbox container when sandboxing is enabled (see _exec_command).
     """
     try:
         if not patch or not patch.strip():
@@ -560,52 +613,39 @@ def apply_patch(
             )
 
         root = Path(state.repo_root).resolve()
-
         changed_files = _extract_changed_files_from_patch(patch)
 
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            suffix=".patch",
-            delete=False,
-            encoding="utf-8",
-        ) as tmp:
-            tmp.write(patch)
-            patch_path = tmp.name
+        # Written inside repo_root (not a system tempdir) so it's visible at
+        # the same relative path whether git apply runs on the host or
+        # inside this repo's sandbox container (which only bind-mounts
+        # repo_root, not /tmp).
+        patch_filename = f".agent_patch_{uuid.uuid4().hex[:8]}.patch"
+        patch_path = root / patch_filename
 
         try:
-            check_cmd = ["git", "apply", "--check", patch_path]
-            check_proc = subprocess.run(
-                check_cmd,
-                cwd=root,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+            patch_path.write_text(patch, encoding="utf-8")
 
-            if check_proc.returncode != 0:
+            check_code, check_out, check_err = _exec_command(
+                root, f"git apply --check {patch_filename}", timeout=30
+            )
+            if check_code != 0:
                 return ToolResult(
                     tool_name="apply_patch",
                     success=False,
-                    output=check_proc.stdout,
-                    error=check_proc.stderr or "git apply --check failed.",
+                    output=check_out,
+                    error=check_err or "git apply --check failed.",
                     metadata={"changed_files": changed_files},
                 )
 
-            apply_cmd = ["git", "apply", patch_path]
-            apply_proc = subprocess.run(
-                apply_cmd,
-                cwd=root,
-                capture_output=True,
-                text=True,
-                timeout=30,
+            apply_code, apply_out, apply_err = _exec_command(
+                root, f"git apply {patch_filename}", timeout=30
             )
-
-            if apply_proc.returncode != 0:
+            if apply_code != 0:
                 return ToolResult(
                     tool_name="apply_patch",
                     success=False,
-                    output=apply_proc.stdout,
-                    error=apply_proc.stderr or "git apply failed.",
+                    output=apply_out,
+                    error=apply_err or "git apply failed.",
                     metadata={"changed_files": changed_files},
                 )
 
@@ -618,7 +658,7 @@ def apply_patch(
 
         finally:
             try:
-                os.remove(patch_path)
+                patch_path.unlink(missing_ok=True)
             except OSError:
                 pass
 
@@ -645,7 +685,10 @@ def run_command(
     timeout: int = 60,
 ) -> ToolResult:
     """
-    Run a safe shell command inside the repository.
+    Run a shell command inside the repository. Runs inside this repo's
+    network-disabled sandbox container when sandboxing is enabled (see
+    _exec_command / sandbox/docker_sandbox.py), otherwise directly on the
+    host behind the DANGEROUS_COMMAND_PATTERNS denylist below.
     """
     try:
         safety_error = _validate_command_safety(command)
@@ -661,27 +704,19 @@ def run_command(
 
         root = Path(state.repo_root).resolve()
 
-        proc = subprocess.run(
-            command,
-            cwd=root,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-        output = _format_command_output(proc.stdout, proc.stderr, proc.returncode)
+        exit_code, stdout, stderr = _exec_command(root, command, timeout)
+        output = _format_command_output(stdout, stderr, exit_code)
 
         return ToolResult(
             tool_name="run_command",
-            success=proc.returncode == 0,
+            success=exit_code == 0,
             output=output,
-            error=None if proc.returncode == 0 else proc.stderr,
+            error=None if exit_code == 0 else stderr,
             metadata={
                 "command": command,
-                "exit_code": proc.returncode,
-                "stdout": proc.stdout,
-                "stderr": proc.stderr,
+                "exit_code": exit_code,
+                "stdout": stdout,
+                "stderr": stderr,
             },
         )
 
@@ -704,6 +739,21 @@ def run_command(
         )
 
 
+def _python_command() -> str:
+    """
+    sys.executable is this HOST process's interpreter (e.g. a .venv path) --
+    meaningless inside the sandbox container's own filesystem, which has its
+    own `python3` on PATH (see sandbox/Dockerfile). Use that when a command
+    will actually be routed through the sandbox; sys.executable otherwise,
+    so host execution keeps using the exact interpreter this process runs
+    (guaranteed to have this project's own dependencies installed).
+    """
+    from sandbox.docker_sandbox import is_sandbox_enabled, is_docker_available
+    if is_sandbox_enabled() and is_docker_available():
+        return "python3"
+    return sys.executable
+
+
 def run_tests(
     state: AgentState,
     test_path: Optional[str] = None,
@@ -711,11 +761,21 @@ def run_tests(
 ) -> ToolResult:
     """
     Run pytest if tests exist; otherwise run Python syntax compilation.
+
+    NOTE on sandboxed runs: the sandbox image only bakes in pytest itself
+    (see sandbox/Dockerfile) -- it cannot pre-install every target repo's own
+    dependencies without network access, which the sandbox deliberately
+    doesn't have. A repo whose tests need packages beyond the stdlib will
+    fail with ModuleNotFoundError inside the sandbox even though the same
+    command would work on a host that already has them installed. That's a
+    real, known trade-off of --network none, not a bug to silently work
+    around by re-enabling network for run_command.
     """
     root = Path(state.repo_root).resolve()
+    python = _python_command()
 
     if test_path:
-        command = f"{sys.executable} -m pytest {test_path}"
+        command = f"{python} -m pytest {test_path}"
         result = run_command(state=state, command=command, timeout=timeout)
         result.tool_name = "run_tests"
         return result
@@ -724,11 +784,24 @@ def run_tests(
     testcase_dir = root / "testcase"
 
     if tests_dir.exists():
-        command = f"{sys.executable} -m pytest tests"
+        command = f"{python} -m pytest tests"
     elif testcase_dir.exists():
-        command = f"{sys.executable} -m pytest testcase"
+        command = f"{python} -m pytest testcase"
     else:
-        command = f"{sys.executable} -m compileall ."
+        # No conventional tests/ or testcase/ folder doesn't mean there are
+        # no tests -- pytest's own discovery finds test_*.py/*_test.py
+        # anywhere in the tree, including flat next to the module under test
+        # (a common layout for small repos/eval fixtures). Try that FIRST;
+        # only degrade to a bare syntax check if pytest genuinely found
+        # nothing to run (exit code 5 = "no tests collected", not a failure).
+        # Skipping straight to compileall here used to mean run_tests could
+        # report PASSED without ever executing a single real test assertion
+        # against a repo laid out exactly like that.
+        probe_code, probe_out, probe_err = _exec_command(root, f"{python} -m pytest . --collect-only -q", 30)
+        if probe_code == 5 or "no tests ran" in (probe_out + probe_err).lower():
+            command = f"{python} -m compileall ."
+        else:
+            command = f"{python} -m pytest ."
 
     result = run_command(state=state, command=command, timeout=timeout)
     result.tool_name = "run_tests"
@@ -886,23 +959,33 @@ def retrieve_context(
     force_rebuild: bool = False,
 ) -> ToolResult:
     """
-    Retrieve relevant repository context using FAISS-based RAG.
+    Retrieve relevant repository context: code + injected knowledge-base
+    chunks (RAGEngine's hybrid vector+keyword recall, cross-encoder rerank)
+    merged with this session's long-term memory (AgentMemory), reranked
+    together through rag/federated.py's FederatedRetriever. Memory is only
+    included when the caller attached one at state.metadata["agent_memory"]
+    (see main.py's run_agent()) -- degrades cleanly to code+knowledge-base
+    only otherwise (e.g. the API's light-chat path, which has no memory).
     """
     try:
+        from rag.federated import FederatedRetriever
 
         engine = _get_rag_engine(state.repo_root, force_rebuild=force_rebuild)
 
         if force_rebuild:
             engine.rebuild()
 
-        results = engine.retrieve(
+        memory = state.metadata.get("agent_memory")
+        retriever = FederatedRetriever(rag_engine=engine, memory=memory)
+
+        results = retriever.retrieve(
             query=query,
             top_k=top_k,
-            vector_top_k=max(12, top_k * 2),
-            keyword_top_k=max(20, top_k * 3),
+            code_vector_top_k=max(12, top_k * 2),
+            code_keyword_top_k=max(20, top_k * 3),
         )
 
-        context_text = engine.format_context(results)
+        context_text = retriever.format_context(results)
 
         # Store structured context into state.
         state.retrieved_context = results
@@ -916,6 +999,7 @@ def retrieve_context(
                 "top_k": top_k,
                 "num_results": len(results),
                 "index_dir": ".agent_index",
+                "memory_included": memory is not None,
             },
         )
 
