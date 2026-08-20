@@ -546,6 +546,23 @@ def replace_in_file(
                 metadata={"path": path},
             )
 
+        # "" is a substring of every string in Python, so `"" not in content`
+        # is always False -- an empty old_text used to sail past the check
+        # below, then content.replace("", new_text, 1) either does nothing
+        # (new_text also empty -- the exact degenerate call the fallback
+        # planner's recovery path produces on a bad patch) or splices
+        # new_text in at index 0, neither of which is what a caller asking
+        # to "replace old_text" means. Reject it outright rather than
+        # silently doing something else.
+        if old_text == "":
+            return ToolResult(
+                tool_name="replace_in_file",
+                success=False,
+                output="",
+                error="old_text must be non-empty.",
+                metadata={"path": path},
+            )
+
         content = _read_text_file(target)
 
         if old_text not in content:
@@ -565,6 +582,21 @@ def replace_in_file(
         else:
             new_content = content.replace(old_text, new_text, 1)
             replaced = 1
+
+        # Belt-and-suspenders beyond the old_text=="" guard above: if
+        # old_text == new_text (or any other way the replace is a no-op),
+        # the file is unchanged and this must not be reported as a
+        # successful edit -- a caller (or the executor's step-completion
+        # check) treating this as evidence a fix was applied would be
+        # acting on a false signal.
+        if new_content == content:
+            return ToolResult(
+                tool_name="replace_in_file",
+                success=False,
+                output="",
+                error="Replacement did not change the file (old_text and new_text produce identical content).",
+                metadata={"path": path},
+            )
 
         target.write_text(new_content, encoding="utf-8")
 

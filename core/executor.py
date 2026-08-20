@@ -437,6 +437,14 @@ class Executor:
                     metadata={"tool_name": tool_name, "arguments": arguments},
                 )
 
+        # Stash what was actually attempted, not just the outcome -- the
+        # exception path above already did this ad hoc; doing it here once,
+        # uniformly, for every path (success/failure/exception) is what
+        # lets the replan prompt show *why* a mutation attempt failed (e.g.
+        # the exact old_text that didn't match) instead of just the error
+        # string, without threading arguments through every tool function.
+        r.metadata.setdefault("arguments", arguments)
+
         self._log_tool_result(r)
         log_event(
             "tool_call",

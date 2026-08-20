@@ -71,8 +71,11 @@ sandbox/
   Dockerfile         Sandbox image
 
 testcase/
-  test_*.py          Tests and integration checks
-  run_eval.py        Evaluation runner
+  test_*.py             Tests and integration checks
+  run_eval.py           Evaluation runner (3-task fixture set, no network needed)
+  run_portfolio_eval.py Evaluation runner (30-task external portfolio set; see
+                         testcase/eval_sets/README.md -- dev-only, not exposed
+                         anywhere in the agent's own UI/API)
 ```
 
 ## Setup

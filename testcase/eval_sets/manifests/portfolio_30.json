@@ -1,0 +1,1299 @@
+{
+  "schema_version": 1,
+  "name": "portfolio-30-v1",
+  "generated_at": "2026-08-19T22:12:43.262528+00:00",
+  "seed": 42,
+  "sources": {
+    "quixbugs": "https://github.com/jkoppel/QuixBugs.git",
+    "bugsinpy": "https://github.com/soarsmu/BugsInPy.git",
+    "swebench": "SWE-bench/SWE-bench_Lite"
+  },
+  "summary": {
+    "by_source": {
+      "bugsinpy": 10,
+      "quixbugs": 10,
+      "swebench": 10
+    },
+    "by_category": {
+      "boundary_condition": 3,
+      "comparison_logic": 3,
+      "concurrency": 7,
+      "dependency_import": 9,
+      "exception_handling": 1,
+      "general_logic": 3,
+      "parsing_validation": 2,
+      "state_cache": 2
+    },
+    "by_difficulty": {
+      "easy": 14,
+      "hard": 4,
+      "medium": 12
+    }
+  },
+  "instances": [
+    {
+      "source": "quixbugs",
+      "instance_id": "quixbugs__max_sublist_sum",
+      "language": "python",
+      "repository": "jkoppel/QuixBugs",
+      "problem_statement": "Fix the defect in python_programs/max_sublist_sum.py. The tests in python_testcases/test_max_sublist_sum.py must pass.",
+      "category": "comparison_logic",
+      "difficulty": "medium",
+      "workspace": {
+        "strategy": "quixbugs_isolated",
+        "cache_path": "cache/quixbugs",
+        "target_file": "python_programs/max_sublist_sum.py",
+        "test_file": "python_testcases/test_max_sublist_sum.py",
+        "exclude": [
+          "correct_python_programs",
+          "correct_java_programs"
+        ]
+      },
+      "grading": {
+        "command": "python -m pytest python_testcases/test_max_sublist_sum.py -q"
+      }
+    },
+    {
+      "source": "quixbugs",
+      "instance_id": "quixbugs__depth_first_search",
+      "language": "python",
+      "repository": "jkoppel/QuixBugs",
+      "problem_statement": "Fix the defect in python_programs/depth_first_search.py. The tests in python_testcases/test_depth_first_search.py must pass.",
+      "category": "general_logic",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "quixbugs_isolated",
+        "cache_path": "cache/quixbugs",
+        "target_file": "python_programs/depth_first_search.py",
+        "test_file": "python_testcases/test_depth_first_search.py",
+        "exclude": [
+          "correct_python_programs",
+          "correct_java_programs"
+        ]
+      },
+      "grading": {
+        "command": "python -m pytest python_testcases/test_depth_first_search.py -q"
+      }
+    },
+    {
+      "source": "quixbugs",
+      "instance_id": "quixbugs__breadth_first_search",
+      "language": "python",
+      "repository": "jkoppel/QuixBugs",
+      "problem_statement": "Fix the defect in python_programs/breadth_first_search.py. The tests in python_testcases/test_breadth_first_search.py must pass.",
+      "category": "dependency_import",
+      "difficulty": "medium",
+      "workspace": {
+        "strategy": "quixbugs_isolated",
+        "cache_path": "cache/quixbugs",
+        "target_file": "python_programs/breadth_first_search.py",
+        "test_file": "python_testcases/test_breadth_first_search.py",
+        "exclude": [
+          "correct_python_programs",
+          "correct_java_programs"
+        ]
+      },
+      "grading": {
+        "command": "python -m pytest python_testcases/test_breadth_first_search.py -q"
+      }
+    },
+    {
+      "source": "quixbugs",
+      "instance_id": "quixbugs__powerset",
+      "language": "python",
+      "repository": "jkoppel/QuixBugs",
+      "problem_statement": "Fix the defect in python_programs/powerset.py. The tests in python_testcases/test_powerset.py must pass.",
+      "category": "boundary_condition",
+      "difficulty": "medium",
+      "workspace": {
+        "strategy": "quixbugs_isolated",
+        "cache_path": "cache/quixbugs",
+        "target_file": "python_programs/powerset.py",
+        "test_file": "python_testcases/test_powerset.py",
+        "exclude": [
+          "correct_python_programs",
+          "correct_java_programs"
+        ]
+      },
+      "grading": {
+        "command": "python -m pytest python_testcases/test_powerset.py -q"
+      }
+    },
+    {
+      "source": "quixbugs",
+      "instance_id": "quixbugs__rpn_eval",
+      "language": "python",
+      "repository": "jkoppel/QuixBugs",
+      "problem_statement": "Fix the defect in python_programs/rpn_eval.py. The tests in python_testcases/test_rpn_eval.py must pass.",
+      "category": "parsing_validation",
+      "difficulty": "medium",
+      "workspace": {
+        "strategy": "quixbugs_isolated",
+        "cache_path": "cache/quixbugs",
+        "target_file": "python_programs/rpn_eval.py",
+        "test_file": "python_testcases/test_rpn_eval.py",
+        "exclude": [
+          "correct_python_programs",
+          "correct_java_programs"
+        ]
+      },
+      "grading": {
+        "command": "python -m pytest python_testcases/test_rpn_eval.py -q"
+      }
+    },
+    {
+      "source": "quixbugs",
+      "instance_id": "quixbugs__is_valid_parenthesization",
+      "language": "python",
+      "repository": "jkoppel/QuixBugs",
+      "problem_statement": "Fix the defect in python_programs/is_valid_parenthesization.py. The tests in python_testcases/test_is_valid_parenthesization.py must pass.",
+      "category": "comparison_logic",
+      "difficulty": "hard",
+      "workspace": {
+        "strategy": "quixbugs_isolated",
+        "cache_path": "cache/quixbugs",
+        "target_file": "python_programs/is_valid_parenthesization.py",
+        "test_file": "python_testcases/test_is_valid_parenthesization.py",
+        "exclude": [
+          "correct_python_programs",
+          "correct_java_programs"
+        ]
+      },
+      "grading": {
+        "command": "python -m pytest python_testcases/test_is_valid_parenthesization.py -q"
+      }
+    },
+    {
+      "source": "quixbugs",
+      "instance_id": "quixbugs__shortest_path_length",
+      "language": "python",
+      "repository": "jkoppel/QuixBugs",
+      "problem_statement": "Fix the defect in python_programs/shortest_path_length.py. The tests in python_testcases/test_shortest_path_length.py must pass.",
+      "category": "general_logic",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "quixbugs_isolated",
+        "cache_path": "cache/quixbugs",
+        "target_file": "python_programs/shortest_path_length.py",
+        "test_file": "python_testcases/test_shortest_path_length.py",
+        "exclude": [
+          "correct_python_programs",
+          "correct_java_programs"
+        ]
+      },
+      "grading": {
+        "command": "python -m pytest python_testcases/test_shortest_path_length.py -q"
+      }
+    },
+    {
+      "source": "quixbugs",
+      "instance_id": "quixbugs__kheapsort",
+      "language": "python",
+      "repository": "jkoppel/QuixBugs",
+      "problem_statement": "Fix the defect in python_programs/kheapsort.py. The tests in python_testcases/test_kheapsort.py must pass.",
+      "category": "dependency_import",
+      "difficulty": "medium",
+      "workspace": {
+        "strategy": "quixbugs_isolated",
+        "cache_path": "cache/quixbugs",
+        "target_file": "python_programs/kheapsort.py",
+        "test_file": "python_testcases/test_kheapsort.py",
+        "exclude": [
+          "correct_python_programs",
+          "correct_java_programs"
+        ]
+      },
+      "grading": {
+        "command": "python -m pytest python_testcases/test_kheapsort.py -q"
+      }
+    },
+    {
+      "source": "quixbugs",
+      "instance_id": "quixbugs__find_first_in_sorted",
+      "language": "python",
+      "repository": "jkoppel/QuixBugs",
+      "problem_statement": "Fix the defect in python_programs/find_first_in_sorted.py. The tests in python_testcases/test_find_first_in_sorted.py must pass.",
+      "category": "boundary_condition",
+      "difficulty": "medium",
+      "workspace": {
+        "strategy": "quixbugs_isolated",
+        "cache_path": "cache/quixbugs",
+        "target_file": "python_programs/find_first_in_sorted.py",
+        "test_file": "python_testcases/test_find_first_in_sorted.py",
+        "exclude": [
+          "correct_python_programs",
+          "correct_java_programs"
+        ]
+      },
+      "grading": {
+        "command": "python -m pytest python_testcases/test_find_first_in_sorted.py -q"
+      }
+    },
+    {
+      "source": "quixbugs",
+      "instance_id": "quixbugs__quicksort",
+      "language": "python",
+      "repository": "jkoppel/QuixBugs",
+      "problem_statement": "Fix the defect in python_programs/quicksort.py. The tests in python_testcases/test_quicksort.py must pass.",
+      "category": "comparison_logic",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "quixbugs_isolated",
+        "cache_path": "cache/quixbugs",
+        "target_file": "python_programs/quicksort.py",
+        "test_file": "python_testcases/test_quicksort.py",
+        "exclude": [
+          "correct_python_programs",
+          "correct_java_programs"
+        ]
+      },
+      "grading": {
+        "command": "python -m pytest python_testcases/test_quicksort.py -q"
+      }
+    },
+    {
+      "source": "bugsinpy",
+      "instance_id": "bugsinpy__keras__14",
+      "language": "python",
+      "repository": "keras",
+      "problem_statement": "Fix BugsInPy bug 14 in the keras project so its triggering tests pass.",
+      "issue_url": null,
+      "category": "dependency_import",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "bugsinpy_checkout",
+        "cache_path": "cache/bugsinpy",
+        "project": "keras",
+        "bug_id": "14"
+      },
+      "grading": {
+        "framework": "bugsinpy",
+        "commands": [
+          "bugsinpy-compile",
+          "bugsinpy-test"
+        ]
+      }
+    },
+    {
+      "source": "bugsinpy",
+      "instance_id": "bugsinpy__luigi__29",
+      "language": "python",
+      "repository": "luigi",
+      "problem_statement": "Fix BugsInPy bug 29 in the luigi project so its triggering tests pass.",
+      "issue_url": null,
+      "category": "concurrency",
+      "difficulty": "medium",
+      "workspace": {
+        "strategy": "bugsinpy_checkout",
+        "cache_path": "cache/bugsinpy",
+        "project": "luigi",
+        "bug_id": "29"
+      },
+      "grading": {
+        "framework": "bugsinpy",
+        "commands": [
+          "bugsinpy-compile",
+          "bugsinpy-test"
+        ]
+      }
+    },
+    {
+      "source": "bugsinpy",
+      "instance_id": "bugsinpy__thefuck__16",
+      "language": "python",
+      "repository": "thefuck",
+      "problem_statement": "Fix BugsInPy bug 16 in the thefuck project so its triggering tests pass.",
+      "issue_url": null,
+      "category": "dependency_import",
+      "difficulty": "hard",
+      "workspace": {
+        "strategy": "bugsinpy_checkout",
+        "cache_path": "cache/bugsinpy",
+        "project": "thefuck",
+        "bug_id": "16"
+      },
+      "grading": {
+        "framework": "bugsinpy",
+        "commands": [
+          "bugsinpy-compile",
+          "bugsinpy-test"
+        ]
+      }
+    },
+    {
+      "source": "bugsinpy",
+      "instance_id": "bugsinpy__tornado__7",
+      "language": "python",
+      "repository": "tornado",
+      "problem_statement": "Fix BugsInPy bug 7 in the tornado project so its triggering tests pass.",
+      "issue_url": null,
+      "category": "concurrency",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "bugsinpy_checkout",
+        "cache_path": "cache/bugsinpy",
+        "project": "tornado",
+        "bug_id": "7"
+      },
+      "grading": {
+        "framework": "bugsinpy",
+        "commands": [
+          "bugsinpy-compile",
+          "bugsinpy-test"
+        ]
+      }
+    },
+    {
+      "source": "bugsinpy",
+      "instance_id": "bugsinpy__pandas__68",
+      "language": "python",
+      "repository": "pandas",
+      "problem_statement": "Fix BugsInPy bug 68 in the pandas project so its triggering tests pass.",
+      "issue_url": null,
+      "category": "dependency_import",
+      "difficulty": "medium",
+      "workspace": {
+        "strategy": "bugsinpy_checkout",
+        "cache_path": "cache/bugsinpy",
+        "project": "pandas",
+        "bug_id": "68"
+      },
+      "grading": {
+        "framework": "bugsinpy",
+        "commands": [
+          "bugsinpy-compile",
+          "bugsinpy-test"
+        ]
+      }
+    },
+    {
+      "source": "bugsinpy",
+      "instance_id": "bugsinpy__black__15",
+      "language": "python",
+      "repository": "black",
+      "problem_statement": "Fix BugsInPy bug 15 in the black project so its triggering tests pass.",
+      "issue_url": null,
+      "category": "concurrency",
+      "difficulty": "hard",
+      "workspace": {
+        "strategy": "bugsinpy_checkout",
+        "cache_path": "cache/bugsinpy",
+        "project": "black",
+        "bug_id": "15"
+      },
+      "grading": {
+        "framework": "bugsinpy",
+        "commands": [
+          "bugsinpy-compile",
+          "bugsinpy-test"
+        ]
+      }
+    },
+    {
+      "source": "bugsinpy",
+      "instance_id": "bugsinpy__spacy__6",
+      "language": "python",
+      "repository": "spacy",
+      "problem_statement": "Fix BugsInPy bug 6 in the spacy project so its triggering tests pass.",
+      "issue_url": null,
+      "category": "dependency_import",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "bugsinpy_checkout",
+        "cache_path": "cache/bugsinpy",
+        "project": "spacy",
+        "bug_id": "6"
+      },
+      "grading": {
+        "framework": "bugsinpy",
+        "commands": [
+          "bugsinpy-compile",
+          "bugsinpy-test"
+        ]
+      }
+    },
+    {
+      "source": "bugsinpy",
+      "instance_id": "bugsinpy__httpie__1",
+      "language": "python",
+      "repository": "httpie",
+      "problem_statement": "Fix BugsInPy bug 1 in the httpie project so its triggering tests pass.",
+      "issue_url": null,
+      "category": "concurrency",
+      "difficulty": "medium",
+      "workspace": {
+        "strategy": "bugsinpy_checkout",
+        "cache_path": "cache/bugsinpy",
+        "project": "httpie",
+        "bug_id": "1"
+      },
+      "grading": {
+        "framework": "bugsinpy",
+        "commands": [
+          "bugsinpy-compile",
+          "bugsinpy-test"
+        ]
+      }
+    },
+    {
+      "source": "bugsinpy",
+      "instance_id": "bugsinpy__youtube-dl__42",
+      "language": "python",
+      "repository": "youtube-dl",
+      "problem_statement": "Fix BugsInPy bug 42 in the youtube-dl project so its triggering tests pass.",
+      "issue_url": null,
+      "category": "dependency_import",
+      "difficulty": "hard",
+      "workspace": {
+        "strategy": "bugsinpy_checkout",
+        "cache_path": "cache/bugsinpy",
+        "project": "youtube-dl",
+        "bug_id": "42"
+      },
+      "grading": {
+        "framework": "bugsinpy",
+        "commands": [
+          "bugsinpy-compile",
+          "bugsinpy-test"
+        ]
+      }
+    },
+    {
+      "source": "bugsinpy",
+      "instance_id": "bugsinpy__fastapi__7",
+      "language": "python",
+      "repository": "fastapi",
+      "problem_statement": "Fix BugsInPy bug 7 in the fastapi project so its triggering tests pass.",
+      "issue_url": null,
+      "category": "concurrency",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "bugsinpy_checkout",
+        "cache_path": "cache/bugsinpy",
+        "project": "fastapi",
+        "bug_id": "7"
+      },
+      "grading": {
+        "framework": "bugsinpy",
+        "commands": [
+          "bugsinpy-compile",
+          "bugsinpy-test"
+        ]
+      }
+    },
+    {
+      "source": "swebench",
+      "instance_id": "sphinx-doc__sphinx-7686",
+      "language": "python",
+      "repository": "sphinx-doc/sphinx",
+      "problem_statement": "autosummary: The members variable for module template contains imported members\n**Describe the bug**\r\nautosummary: The members variable for module template contains imported members even if autosummary_imported_members is False.\r\n\r\n**To Reproduce**\r\n\r\n```\r\n# _templates/autosummary/module.rst\r\n{{ fullname | escape | underline }}\r\n\r\n.. automodule:: {{ fullname }}\r\n\r\n   .. autosummary::\r\n   {% for item in members %}\r\n      {{ item }}\r\n   {%- endfor %}\r\n\r\n```\r\n```\r\n# example.py\r\nimport os\r\n```\r\n```\r\n# index.rst\r\n.. autosummary::\r\n   :toctree: generated\r\n\r\n   example\r\n```\r\n```\r\n# conf.py\r\nautosummary_generate = True\r\nautosummary_imported_members = False\r\n```\r\n\r\nAs a result, I got following output:\r\n```\r\n# generated/example.rst\r\nexample\r\n=======\r\n\r\n.. automodule:: example\r\n\r\n   .. autosummary::\r\n\r\n      __builtins__\r\n      __cached__\r\n      __doc__\r\n      __file__\r\n      __loader__\r\n      __name__\r\n      __package__\r\n      __spec__\r\n      os\r\n```\r\n\r\n**Expected behavior**\r\nThe template variable `members` should not contain imported members when `autosummary_imported_members` is False.\r\n\r\n**Your project**\r\nNo\r\n\r\n**Screenshots**\r\nNo\r\n\r\n**Environment info**\r\n- OS: Mac\r\n- Python version: 3.8.2\r\n- Sphinx version: 3.1.0dev\r\n- Sphinx extensions:  sphinx.ext.autosummary\r\n- Extra tools: No\r\n\r\n**Additional context**\r\nNo",
+      "issue_url": null,
+      "category": "dependency_import",
+      "difficulty": "medium",
+      "workspace": {
+        "strategy": "git_base_commit",
+        "repository": "sphinx-doc/sphinx",
+        "base_commit": "752d3285d250bbaf673cff25e83f03f247502021",
+        "version": "3.1"
+      },
+      "grading": {
+        "framework": "swebench",
+        "dataset": "SWE-bench/SWE-bench_Lite",
+        "instance_id": "sphinx-doc__sphinx-7686",
+        "fail_to_pass": [
+          "tests/test_ext_autosummary.py::test_autosummary_generate_content_for_module",
+          "tests/test_ext_autosummary.py::test_autosummary_generate_content_for_module_skipped"
+        ],
+        "pass_to_pass": [
+          "tests/test_ext_autosummary.py::test_mangle_signature",
+          "tests/test_ext_autosummary.py::test_escaping",
+          "tests/test_ext_autosummary.py::test_autosummary_generate",
+          "tests/test_ext_autosummary.py::test_autosummary_generate_overwrite1",
+          "tests/test_ext_autosummary.py::test_autosummary_generate_overwrite2",
+          "tests/test_ext_autosummary.py::test_autosummary_recursive",
+          "tests/test_ext_autosummary.py::test_autosummary_latex_table_colspec",
+          "tests/test_ext_autosummary.py::test_import_by_name",
+          "tests/test_ext_autosummary.py::test_autosummary_imported_members",
+          "tests/test_ext_autosummary.py::test_generate_autosummary_docs_property",
+          "tests/test_ext_autosummary.py::test_autosummary_skip_member",
+          "tests/test_ext_autosummary.py::test_autosummary_template",
+          "tests/test_ext_autosummary.py::test_empty_autosummary_generate",
+          "tests/test_ext_autosummary.py::test_invalid_autosummary_generate",
+          "tests/test_ext_autosummary.py::test_autogen"
+        ]
+      }
+    },
+    {
+      "source": "swebench",
+      "instance_id": "sympy__sympy-15609",
+      "language": "python",
+      "repository": "sympy/sympy",
+      "problem_statement": "Indexed matrix-expression LaTeX printer is not compilable\n```python\r\ni, j, k = symbols(\"i j k\")\r\nM = MatrixSymbol(\"M\", k, k)\r\nN = MatrixSymbol(\"N\", k, k)\r\nlatex((M*N)[i, j])\r\n```\r\n\r\nThe LaTeX string produced by the last command is:\r\n```\r\n\\sum_{i_{1}=0}^{k - 1} M_{i, _i_1} N_{_i_1, j}\r\n```\r\nLaTeX complains about a double subscript `_`. This expression won't render in MathJax either.",
+      "issue_url": null,
+      "category": "boundary_condition",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "git_base_commit",
+        "repository": "sympy/sympy",
+        "base_commit": "15f56f3b0006d2ed2c29bde3c43e91618012c849",
+        "version": "1.4"
+      },
+      "grading": {
+        "framework": "swebench",
+        "dataset": "SWE-bench/SWE-bench_Lite",
+        "instance_id": "sympy__sympy-15609",
+        "fail_to_pass": [
+          "test_MatrixElement_printing"
+        ],
+        "pass_to_pass": [
+          "test_printmethod",
+          "test_latex_basic",
+          "test_latex_builtins",
+          "test_latex_SingularityFunction",
+          "test_latex_cycle",
+          "test_latex_permutation",
+          "test_latex_Float",
+          "test_latex_vector_expressions",
+          "test_latex_symbols",
+          "test_latex_functions",
+          "test_function_subclass_different_name",
+          "test_hyper_printing",
+          "test_latex_bessel",
+          "test_latex_fresnel",
+          "test_latex_brackets",
+          "test_latex_indexed",
+          "test_latex_derivatives",
+          "test_latex_subs",
+          "test_latex_integrals",
+          "test_latex_sets",
+          "test_latex_SetExpr",
+          "test_latex_Range",
+          "test_latex_sequences",
+          "test_latex_FourierSeries",
+          "test_latex_FormalPowerSeries",
+          "test_latex_intervals",
+          "test_latex_AccumuBounds",
+          "test_latex_emptyset",
+          "test_latex_commutator",
+          "test_latex_union",
+          "test_latex_symmetric_difference",
+          "test_latex_Complement",
+          "test_latex_Complexes",
+          "test_latex_productset",
+          "test_latex_Naturals",
+          "test_latex_Naturals0",
+          "test_latex_Integers",
+          "test_latex_ImageSet",
+          "test_latex_ConditionSet",
+          "test_latex_ComplexRegion",
+          "test_latex_Contains",
+          "test_latex_sum",
+          "test_latex_product",
+          "test_latex_limits",
+          "test_latex_log",
+          "test_issue_3568",
+          "test_latex",
+          "test_latex_dict",
+          "test_latex_list",
+          "test_latex_rational",
+          "test_latex_inverse",
+          "test_latex_DiracDelta",
+          "test_latex_Heaviside",
+          "test_latex_KroneckerDelta",
+          "test_latex_LeviCivita",
+          "test_mode",
+          "test_latex_Piecewise",
+          "test_latex_Matrix",
+          "test_latex_matrix_with_functions",
+          "test_latex_NDimArray",
+          "test_latex_mul_symbol",
+          "test_latex_issue_4381",
+          "test_latex_issue_4576",
+          "test_latex_pow_fraction",
+          "test_noncommutative",
+          "test_latex_order",
+          "test_latex_Lambda",
+          "test_latex_PolyElement",
+          "test_latex_FracElement",
+          "test_latex_Poly",
+          "test_latex_Poly_order",
+          "test_latex_ComplexRootOf",
+          "test_latex_RootSum",
+          "test_settings",
+          "test_latex_numbers",
+          "test_latex_euler",
+          "test_lamda",
+          "test_custom_symbol_names",
+          "test_matAdd",
+          "test_matMul",
+          "test_latex_MatrixSlice",
+          "test_latex_RandomDomain",
+          "test_PrettyPoly",
+          "test_integral_transforms",
+          "test_PolynomialRingBase",
+          "test_categories",
+          "test_Modules",
+          "test_QuotientRing",
+          "test_Tr",
+          "test_Adjoint",
+          "test_Hadamard",
+          "test_ZeroMatrix",
+          "test_boolean_args_order",
+          "test_imaginary",
+          "test_builtins_without_args",
+          "test_latex_greek_functions",
+          "test_translate",
+          "test_other_symbols",
+          "test_modifiers",
+          "test_greek_symbols",
+          "test_builtin_no_args",
+          "test_issue_6853",
+          "test_Mul",
+          "test_Pow",
+          "test_issue_7180",
+          "test_issue_8409",
+          "test_issue_7117",
+          "test_issue_15439",
+          "test_issue_2934",
+          "test_issue_10489",
+          "test_issue_12886",
+          "test_issue_13651",
+          "test_latex_UnevaluatedExpr",
+          "test_MatrixSymbol_printing",
+          "test_Quaternion_latex_printing",
+          "test_TensorProduct_printing",
+          "test_WedgeProduct_printing",
+          "test_issue_14041",
+          "test_issue_9216",
+          "test_latex_printer_tensor",
+          "test_trace"
+        ]
+      }
+    },
+    {
+      "source": "swebench",
+      "instance_id": "django__django-13448",
+      "language": "python",
+      "repository": "django/django",
+      "problem_statement": "Test runner setup_databases crashes with \"TEST\": {\"MIGRATE\": False}.\nDescription\n\t\nI'm trying to upgrade a project from Django 3.0 to Django 3.1 and wanted to try out the new \"TEST\": {\"MIGRATE\": False} database setting.\nSadly I'm running into an issue immediately when running ./manage.py test.\nRemoving the \"TEST\": {\"MIGRATE\": False} line allows the tests to run. So this is not blocking the upgrade for us, but it would be nice if we were able to use the new feature to skip migrations during testing.\nFor reference, this project was recently upgraded from Django 1.4 all the way to 3.0 so there might be some legacy cruft somewhere that triggers this.\nHere's the trackeback. I'll try to debug this some more.\nTraceback (most recent call last):\n File \"/usr/local/lib/python3.6/site-packages/django/db/backends/utils.py\", line 84, in _execute\n\treturn self.cursor.execute(sql, params)\npsycopg2.errors.UndefinedTable: relation \"django_admin_log\" does not exist\nLINE 1: ...n_flag\", \"django_admin_log\".\"change_message\" FROM \"django_ad...\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t ^\nThe above exception was the direct cause of the following exception:\nTraceback (most recent call last):\n File \"/usr/local/lib/python3.6/site-packages/django/db/models/sql/compiler.py\", line 1156, in execute_sql\n\tcursor.execute(sql, params)\n File \"/usr/local/lib/python3.6/site-packages/django/db/backends/utils.py\", line 66, in execute\n\treturn self._execute_with_wrappers(sql, params, many=False, executor=self._execute)\n File \"/usr/local/lib/python3.6/site-packages/django/db/backends/utils.py\", line 75, in _execute_with_wrappers\n\treturn executor(sql, params, many, context)\n File \"/usr/local/lib/python3.6/site-packages/django/db/backends/utils.py\", line 84, in _execute\n\treturn self.cursor.execute(sql, params)\n File \"/usr/local/lib/python3.6/site-packages/django/db/utils.py\", line 90, in __exit__\n\traise dj_exc_value.with_traceback(traceback) from exc_value\n File \"/usr/local/lib/python3.6/site-packages/django/db/backends/utils.py\", line 84, in _execute\n\treturn self.cursor.execute(sql, params)\ndjango.db.utils.ProgrammingError: relation \"django_admin_log\" does not exist\nLINE 1: ...n_flag\", \"django_admin_log\".\"change_message\" FROM \"django_ad...\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t ^\nDuring handling of the above exception, another exception occurred:\nTraceback (most recent call last):\n File \"./manage.py\", line 15, in <module>\n\tmain()\n File \"./manage.py\", line 11, in main\n\texecute_from_command_line(sys.argv)\n File \"/usr/local/lib/python3.6/site-packages/django/core/management/__init__.py\", line 401, in execute_from_command_line\n\tutility.execute()\n File \"/usr/local/lib/python3.6/site-packages/django/core/management/__init__.py\", line 395, in execute\n\tself.fetch_command(subcommand).run_from_argv(self.argv)\n File \"/usr/local/lib/python3.6/site-packages/django/core/management/commands/test.py\", line 23, in run_from_argv\n\tsuper().run_from_argv(argv)\n File \"/usr/local/lib/python3.6/site-packages/django/core/management/base.py\", line 330, in run_from_argv\n\tself.execute(*args, **cmd_options)\n File \"/usr/local/lib/python3.6/site-packages/django/core/management/base.py\", line 371, in execute\n\toutput = self.handle(*args, **options)\n File \"/usr/local/lib/python3.6/site-packages/django/core/management/commands/test.py\", line 53, in handle\n\tfailures = test_runner.run_tests(test_labels)\n File \"/usr/local/lib/python3.6/site-packages/django/test/runner.py\", line 695, in run_tests\n\told_config = self.setup_databases(aliases=databases)\n File \"/usr/local/lib/python3.6/site-packages/django/test/runner.py\", line 616, in setup_databases\n\tself.parallel, **kwargs\n File \"/usr/local/lib/python3.6/site-packages/django/test/utils.py\", line 174, in setup_databases\n\tserialize=connection.settings_dict['TEST'].get('SERIALIZE', True),\n File \"/usr/local/lib/python3.6/site-packages/django/db/backends/base/creation.py\", line 78, in create_test_db\n\tself.connection._test_serialized_contents = self.serialize_db_to_string()\n File \"/usr/local/lib/python3.6/site-packages/django/db/backends/base/creation.py\", line 121, in serialize_db_to_string\n\tserializers.serialize(\"json\", get_objects(), indent=None, stream=out)\n File \"/usr/local/lib/python3.6/site-packages/django/core/serializers/__init__.py\", line 128, in serialize\n\ts.serialize(queryset, **options)\n File \"/usr/local/lib/python3.6/site-packages/django/core/serializers/base.py\", line 90, in serialize\n\tfor count, obj in enumerate(queryset, start=1):\n File \"/usr/local/lib/python3.6/site-packages/django/db/backends/base/creation.py\", line 118, in get_objects\n\tyield from queryset.iterator()\n File \"/usr/local/lib/python3.6/site-packages/django/db/models/query.py\", line 360, in _iterator\n\tyield from self._iterable_class(self, chunked_fetch=use_chunked_fetch, chunk_size=chunk_size)\n File \"/usr/local/lib/python3.6/site-packages/django/db/models/query.py\", line 53, in __iter__\n\tresults = compiler.execute_sql(chunked_fetch=self.chunked_fetch, chunk_size=self.chunk_size)\n File \"/usr/local/lib/python3.6/site-packages/django/db/models/sql/compiler.py\", line 1159, in execute_sql\n\tcursor.close()\npsycopg2.errors.InvalidCursorName: cursor \"_django_curs_139860821038912_sync_1\" does not exist",
+      "issue_url": null,
+      "category": "concurrency",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "git_base_commit",
+        "repository": "django/django",
+        "base_commit": "7b9596b974fb0ad1868b10c8c2174e10b72be403",
+        "version": "3.2"
+      },
+      "grading": {
+        "framework": "swebench",
+        "dataset": "SWE-bench/SWE-bench_Lite",
+        "instance_id": "django__django-13448",
+        "fail_to_pass": [
+          "test_migrate_test_setting_false (backends.base.test_creation.TestDbCreationTests)"
+        ],
+        "pass_to_pass": [
+          "test_custom_test_name (backends.base.test_creation.TestDbSignatureTests)",
+          "test_custom_test_name_with_test_prefix (backends.base.test_creation.TestDbSignatureTests)",
+          "test_default_name (backends.base.test_creation.TestDbSignatureTests)",
+          "test_migrate_test_setting_true (backends.base.test_creation.TestDbCreationTests)",
+          "test_circular_reference (backends.base.test_creation.TestDeserializeDbFromString)",
+          "test_circular_reference_with_natural_key (backends.base.test_creation.TestDeserializeDbFromString)",
+          "test_self_reference (backends.base.test_creation.TestDeserializeDbFromString)"
+        ]
+      }
+    },
+    {
+      "source": "swebench",
+      "instance_id": "psf__requests-1963",
+      "language": "python",
+      "repository": "psf/requests",
+      "problem_statement": "`Session.resolve_redirects` copies the original request for all subsequent requests, can cause incorrect method selection\nConsider the following redirection chain:\n\n```\nPOST /do_something HTTP/1.1\nHost: server.example.com\n...\n\nHTTP/1.1 303 See Other\nLocation: /new_thing_1513\n\nGET /new_thing_1513\nHost: server.example.com\n...\n\nHTTP/1.1 307 Temporary Redirect\nLocation: //failover.example.com/new_thing_1513\n```\n\nThe intermediate 303 See Other has caused the POST to be converted to\na GET.  The subsequent 307 should preserve the GET.  However, because\n`Session.resolve_redirects` starts each iteration by copying the _original_\nrequest object, Requests will issue a POST!",
+      "issue_url": null,
+      "category": "state_cache",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "git_base_commit",
+        "repository": "psf/requests",
+        "base_commit": "110048f9837f8441ea536804115e80b69f400277",
+        "version": "2.3"
+      },
+      "grading": {
+        "framework": "swebench",
+        "dataset": "SWE-bench/SWE-bench_Lite",
+        "instance_id": "psf__requests-1963",
+        "fail_to_pass": [
+          "test_requests.py::RequestsTestCase::test_DIGESTAUTH_QUOTES_QOP_VALUE",
+          "test_requests.py::RequestsTestCase::test_DIGESTAUTH_WRONG_HTTP_401_GET",
+          "test_requests.py::RequestsTestCase::test_DIGEST_AUTH_RETURNS_COOKIE",
+          "test_requests.py::RequestsTestCase::test_DIGEST_HTTP_200_OK_GET",
+          "test_requests.py::RequestsTestCase::test_POSTBIN_GET_POST_FILES_WITH_DATA",
+          "test_requests.py::RequestsTestCase::test_param_cookiejar_works",
+          "test_requests.py::TestRedirects::test_requests_are_updated_each_time"
+        ],
+        "pass_to_pass": [
+          "test_requests.py::RequestsTestCase::test_BASICAUTH_TUPLE_HTTP_200_OK_GET",
+          "test_requests.py::RequestsTestCase::test_DIGEST_AUTH_SETS_SESSION_COOKIES",
+          "test_requests.py::RequestsTestCase::test_DIGEST_STREAM",
+          "test_requests.py::RequestsTestCase::test_HTTP_200_OK_GET_ALTERNATIVE",
+          "test_requests.py::RequestsTestCase::test_HTTP_200_OK_GET_WITH_MIXED_PARAMS",
+          "test_requests.py::RequestsTestCase::test_HTTP_200_OK_GET_WITH_PARAMS",
+          "test_requests.py::RequestsTestCase::test_HTTP_200_OK_HEAD",
+          "test_requests.py::RequestsTestCase::test_HTTP_200_OK_PUT",
+          "test_requests.py::RequestsTestCase::test_HTTP_302_ALLOW_REDIRECT_GET",
+          "test_requests.py::RequestsTestCase::test_POSTBIN_GET_POST_FILES",
+          "test_requests.py::RequestsTestCase::test_autoset_header_values_are_native",
+          "test_requests.py::RequestsTestCase::test_basic_building",
+          "test_requests.py::RequestsTestCase::test_basicauth_with_netrc",
+          "test_requests.py::RequestsTestCase::test_can_send_nonstring_objects_with_files",
+          "test_requests.py::RequestsTestCase::test_cannot_send_unprepared_requests",
+          "test_requests.py::RequestsTestCase::test_cookie_as_dict_items",
+          "test_requests.py::RequestsTestCase::test_cookie_as_dict_keeps_items",
+          "test_requests.py::RequestsTestCase::test_cookie_as_dict_keeps_len",
+          "test_requests.py::RequestsTestCase::test_cookie_as_dict_keys",
+          "test_requests.py::RequestsTestCase::test_cookie_as_dict_values",
+          "test_requests.py::RequestsTestCase::test_cookie_parameters",
+          "test_requests.py::RequestsTestCase::test_cookie_persists_via_api",
+          "test_requests.py::RequestsTestCase::test_cookie_quote_wrapped",
+          "test_requests.py::RequestsTestCase::test_cookie_removed_on_expire",
+          "test_requests.py::RequestsTestCase::test_cookie_sent_on_redirect",
+          "test_requests.py::RequestsTestCase::test_custom_content_type",
+          "test_requests.py::RequestsTestCase::test_decompress_gzip",
+          "test_requests.py::RequestsTestCase::test_different_encodings_dont_break_post",
+          "test_requests.py::RequestsTestCase::test_entry_points",
+          "test_requests.py::RequestsTestCase::test_fixes_1329",
+          "test_requests.py::RequestsTestCase::test_generic_cookiejar_works",
+          "test_requests.py::RequestsTestCase::test_get_auth_from_url",
+          "test_requests.py::RequestsTestCase::test_get_auth_from_url_encoded_hashes",
+          "test_requests.py::RequestsTestCase::test_get_auth_from_url_encoded_spaces",
+          "test_requests.py::RequestsTestCase::test_get_auth_from_url_not_encoded_spaces",
+          "test_requests.py::RequestsTestCase::test_get_auth_from_url_percent_chars",
+          "test_requests.py::RequestsTestCase::test_header_keys_are_native",
+          "test_requests.py::RequestsTestCase::test_header_remove_is_case_insensitive",
+          "test_requests.py::RequestsTestCase::test_headers_on_session_with_None_are_not_sent",
+          "test_requests.py::RequestsTestCase::test_hook_receives_request_arguments",
+          "test_requests.py::RequestsTestCase::test_http_error",
+          "test_requests.py::RequestsTestCase::test_invalid_url",
+          "test_requests.py::RequestsTestCase::test_links",
+          "test_requests.py::RequestsTestCase::test_long_authinfo_in_url",
+          "test_requests.py::RequestsTestCase::test_no_content_length",
+          "test_requests.py::RequestsTestCase::test_oddball_schemes_dont_check_URLs",
+          "test_requests.py::RequestsTestCase::test_params_are_added_before_fragment",
+          "test_requests.py::RequestsTestCase::test_params_are_merged_case_sensitive",
+          "test_requests.py::RequestsTestCase::test_path_is_not_double_encoded",
+          "test_requests.py::RequestsTestCase::test_prepared_from_session",
+          "test_requests.py::RequestsTestCase::test_prepared_request_hook",
+          "test_requests.py::RequestsTestCase::test_pyopenssl_redirect",
+          "test_requests.py::RequestsTestCase::test_request_and_response_are_pickleable",
+          "test_requests.py::RequestsTestCase::test_request_cookie_overrides_session_cookie",
+          "test_requests.py::RequestsTestCase::test_request_cookies_not_persisted",
+          "test_requests.py::RequestsTestCase::test_request_ok_set",
+          "test_requests.py::RequestsTestCase::test_requests_in_history_are_not_overridden",
+          "test_requests.py::RequestsTestCase::test_response_is_iterable",
+          "test_requests.py::RequestsTestCase::test_session_hooks_are_overriden_by_request_hooks",
+          "test_requests.py::RequestsTestCase::test_session_hooks_are_used_with_no_request_hooks",
+          "test_requests.py::RequestsTestCase::test_session_pickling",
+          "test_requests.py::RequestsTestCase::test_set_cookie_on_301",
+          "test_requests.py::RequestsTestCase::test_status_raising",
+          "test_requests.py::RequestsTestCase::test_time_elapsed_blank",
+          "test_requests.py::RequestsTestCase::test_transport_adapter_ordering",
+          "test_requests.py::RequestsTestCase::test_unicode_get",
+          "test_requests.py::RequestsTestCase::test_unicode_header_name",
+          "test_requests.py::RequestsTestCase::test_unicode_method_name",
+          "test_requests.py::RequestsTestCase::test_unicode_multipart_post",
+          "test_requests.py::RequestsTestCase::test_unicode_multipart_post_fieldnames",
+          "test_requests.py::RequestsTestCase::test_uppercase_scheme_redirect",
+          "test_requests.py::RequestsTestCase::test_urlencoded_get_query_multivalued_param",
+          "test_requests.py::RequestsTestCase::test_user_agent_transfers",
+          "test_requests.py::TestContentEncodingDetection::test_html4_pragma",
+          "test_requests.py::TestContentEncodingDetection::test_html_charset",
+          "test_requests.py::TestContentEncodingDetection::test_none",
+          "test_requests.py::TestContentEncodingDetection::test_precedence",
+          "test_requests.py::TestContentEncodingDetection::test_xhtml_pragma",
+          "test_requests.py::TestContentEncodingDetection::test_xml",
+          "test_requests.py::TestCaseInsensitiveDict::test_contains",
+          "test_requests.py::TestCaseInsensitiveDict::test_delitem",
+          "test_requests.py::TestCaseInsensitiveDict::test_docstring_example",
+          "test_requests.py::TestCaseInsensitiveDict::test_equality",
+          "test_requests.py::TestCaseInsensitiveDict::test_fixes_649",
+          "test_requests.py::TestCaseInsensitiveDict::test_get",
+          "test_requests.py::TestCaseInsensitiveDict::test_getitem",
+          "test_requests.py::TestCaseInsensitiveDict::test_iter",
+          "test_requests.py::TestCaseInsensitiveDict::test_iterable_init",
+          "test_requests.py::TestCaseInsensitiveDict::test_kwargs_init",
+          "test_requests.py::TestCaseInsensitiveDict::test_len",
+          "test_requests.py::TestCaseInsensitiveDict::test_lower_items",
+          "test_requests.py::TestCaseInsensitiveDict::test_mapping_init",
+          "test_requests.py::TestCaseInsensitiveDict::test_preserve_key_case",
+          "test_requests.py::TestCaseInsensitiveDict::test_preserve_last_key_case",
+          "test_requests.py::TestCaseInsensitiveDict::test_setdefault",
+          "test_requests.py::TestCaseInsensitiveDict::test_update",
+          "test_requests.py::TestCaseInsensitiveDict::test_update_retains_unchanged",
+          "test_requests.py::UtilsTestCase::test_address_in_network",
+          "test_requests.py::UtilsTestCase::test_dotted_netmask",
+          "test_requests.py::UtilsTestCase::test_get_auth_from_url",
+          "test_requests.py::UtilsTestCase::test_get_environ_proxies",
+          "test_requests.py::UtilsTestCase::test_get_environ_proxies_ip_ranges",
+          "test_requests.py::UtilsTestCase::test_is_ipv4_address",
+          "test_requests.py::UtilsTestCase::test_is_valid_cidr",
+          "test_requests.py::UtilsTestCase::test_super_len_io_streams",
+          "test_requests.py::TestMorselToCookieExpires::test_expires_invalid_int",
+          "test_requests.py::TestMorselToCookieExpires::test_expires_invalid_str",
+          "test_requests.py::TestMorselToCookieExpires::test_expires_none",
+          "test_requests.py::TestMorselToCookieExpires::test_expires_valid_str",
+          "test_requests.py::TestMorselToCookieMaxAge::test_max_age_invalid_str",
+          "test_requests.py::TestMorselToCookieMaxAge::test_max_age_valid_int",
+          "test_requests.py::TestTimeout::test_stream_timeout"
+        ]
+      }
+    },
+    {
+      "source": "swebench",
+      "instance_id": "pallets__flask-4045",
+      "language": "python",
+      "repository": "pallets/flask",
+      "problem_statement": "Raise error when blueprint name contains a dot\nThis is required since every dot is now significant since blueprints can be nested. An error was already added for endpoint names in 1.0, but should have been added for this as well.",
+      "issue_url": null,
+      "category": "exception_handling",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "git_base_commit",
+        "repository": "pallets/flask",
+        "base_commit": "d8c37f43724cd9fb0870f77877b7c4c7e38a19e0",
+        "version": "2.0"
+      },
+      "grading": {
+        "framework": "swebench",
+        "dataset": "SWE-bench/SWE-bench_Lite",
+        "instance_id": "pallets__flask-4045",
+        "fail_to_pass": [
+          "tests/test_blueprints.py::test_dotted_name_not_allowed",
+          "tests/test_blueprints.py::test_route_decorator_custom_endpoint_with_dots"
+        ],
+        "pass_to_pass": [
+          "tests/test_basic.py::test_method_route_no_methods",
+          "tests/test_basic.py::test_disallow_string_for_allowed_methods",
+          "tests/test_basic.py::test_error_handler_unknown_code",
+          "tests/test_basic.py::test_request_locals",
+          "tests/test_basic.py::test_exception_propagation",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[None-True-True-True]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[None-True-True-False]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[None-True-False-True]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[None-True-False-False]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[None-False-True-True]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[None-False-True-False]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[None-False-False-True]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[None-False-False-False]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[True-True-True-True]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[True-True-True-False]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[True-True-False-True]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[True-True-False-False]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[True-False-True-True]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[True-False-True-False]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[True-False-False-True]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[True-False-False-False]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[False-True-True-True]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[False-True-True-False]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[False-True-False-True]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[False-True-False-False]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[False-False-True-True]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[False-False-True-False]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[False-False-False-True]",
+          "tests/test_basic.py::test_werkzeug_passthrough_errors[False-False-False-False]",
+          "tests/test_basic.py::test_get_method_on_g",
+          "tests/test_basic.py::test_g_iteration_protocol",
+          "tests/test_basic.py::test_run_defaults",
+          "tests/test_basic.py::test_run_server_port",
+          "tests/test_basic.py::test_run_from_config[None-None-pocoo.org:8080-pocoo.org-8080]",
+          "tests/test_basic.py::test_run_from_config[localhost-None-pocoo.org:8080-localhost-8080]",
+          "tests/test_basic.py::test_run_from_config[None-80-pocoo.org:8080-pocoo.org-80]",
+          "tests/test_basic.py::test_run_from_config[localhost-80-pocoo.org:8080-localhost-80]",
+          "tests/test_basic.py::test_run_from_config[localhost-0-localhost:8080-localhost-0]",
+          "tests/test_basic.py::test_run_from_config[None-None-localhost:8080-localhost-8080]",
+          "tests/test_basic.py::test_run_from_config[None-None-localhost:0-localhost-0]",
+          "tests/test_basic.py::test_app_freed_on_zero_refcount",
+          "tests/test_blueprints.py::test_template_filter",
+          "tests/test_blueprints.py::test_add_template_filter",
+          "tests/test_blueprints.py::test_template_filter_with_name",
+          "tests/test_blueprints.py::test_add_template_filter_with_name",
+          "tests/test_blueprints.py::test_template_test",
+          "tests/test_blueprints.py::test_add_template_test",
+          "tests/test_blueprints.py::test_template_test_with_name",
+          "tests/test_blueprints.py::test_add_template_test_with_name",
+          "tests/test_blueprints.py::test_template_global"
+        ]
+      }
+    },
+    {
+      "source": "swebench",
+      "instance_id": "astropy__astropy-6938",
+      "language": "python",
+      "repository": "astropy/astropy",
+      "problem_statement": "Possible bug in io.fits related to D exponents\nI came across the following code in ``fitsrec.py``:\r\n\r\n```python\r\n        # Replace exponent separator in floating point numbers\r\n        if 'D' in format:\r\n            output_field.replace(encode_ascii('E'), encode_ascii('D'))\r\n```\r\n\r\nI think this may be incorrect because as far as I can tell ``replace`` is not an in-place operation for ``chararray`` (it returns a copy). Commenting out this code doesn't cause any tests to fail so I think this code isn't being tested anyway.",
+      "issue_url": null,
+      "category": "general_logic",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "git_base_commit",
+        "repository": "astropy/astropy",
+        "base_commit": "c76af9ed6bb89bfba45b9f5bc1e635188278e2fa",
+        "version": "1.3"
+      },
+      "grading": {
+        "framework": "swebench",
+        "dataset": "SWE-bench/SWE-bench_Lite",
+        "instance_id": "astropy__astropy-6938",
+        "fail_to_pass": [
+          "astropy/io/fits/tests/test_checksum.py::TestChecksumFunctions::test_ascii_table_data",
+          "astropy/io/fits/tests/test_table.py::TestTableFunctions::test_ascii_table"
+        ],
+        "pass_to_pass": [
+          "astropy/io/fits/tests/test_checksum.py::TestChecksumFunctions::test_sample_file",
+          "astropy/io/fits/tests/test_checksum.py::TestChecksumFunctions::test_image_create",
+          "astropy/io/fits/tests/test_checksum.py::TestChecksumFunctions::test_scaled_data",
+          "astropy/io/fits/tests/test_checksum.py::TestChecksumFunctions::test_scaled_data_auto_rescale",
+          "astropy/io/fits/tests/test_checksum.py::TestChecksumFunctions::test_uint16_data",
+          "astropy/io/fits/tests/test_checksum.py::TestChecksumFunctions::test_groups_hdu_data",
+          "astropy/io/fits/tests/test_checksum.py::TestChecksumFunctions::test_open_with_no_keywords",
+          "astropy/io/fits/tests/test_checksum.py::TestChecksumFunctions::test_writeto_convenience",
+          "astropy/io/fits/tests/test_checksum.py::TestChecksumFunctions::test_hdu_writeto",
+          "astropy/io/fits/tests/test_checksum.py::TestChecksumFunctions::test_datasum_only",
+          "astropy/io/fits/tests/test_table.py::test_regression_scalar_indexing"
+        ]
+      }
+    },
+    {
+      "source": "swebench",
+      "instance_id": "pydata__xarray-4248",
+      "language": "python",
+      "repository": "pydata/xarray",
+      "problem_statement": "Feature request: show units in dataset overview\nHere's a hypothetical dataset:\r\n\r\n```\r\n<xarray.Dataset>\r\nDimensions:  (time: 3, x: 988, y: 822)\r\nCoordinates:\r\n  * x         (x) float64 ...\r\n  * y         (y) float64 ...\r\n  * time      (time) datetime64[ns] ...\r\nData variables:\r\n    rainfall  (time, y, x) float32 ...\r\n    max_temp  (time, y, x) float32 ...\r\n```\r\n\r\nIt would be really nice if the units of the coordinates and of the data variables were shown in the `Dataset` repr, for example as:\r\n\r\n```\r\n<xarray.Dataset>\r\nDimensions:  (time: 3, x: 988, y: 822)\r\nCoordinates:\r\n  * x, in metres         (x)            float64 ...\r\n  * y, in metres         (y)            float64 ...\r\n  * time                 (time)         datetime64[ns] ...\r\nData variables:\r\n    rainfall, in mm      (time, y, x)   float32 ...\r\n    max_temp, in deg C   (time, y, x)   float32 ...\r\n```",
+      "issue_url": null,
+      "category": "parsing_validation",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "git_base_commit",
+        "repository": "pydata/xarray",
+        "base_commit": "98dc1f4ea18738492e074e9e51ddfed5cd30ab94",
+        "version": "0.12"
+      },
+      "grading": {
+        "framework": "swebench",
+        "dataset": "SWE-bench/SWE-bench_Lite",
+        "instance_id": "pydata__xarray-4248",
+        "fail_to_pass": [
+          "xarray/tests/test_formatting.py::test_inline_variable_array_repr_custom_repr"
+        ],
+        "pass_to_pass": [
+          "xarray/tests/test_formatting.py::TestFormatting::test_get_indexer_at_least_n_items",
+          "xarray/tests/test_formatting.py::TestFormatting::test_first_n_items",
+          "xarray/tests/test_formatting.py::TestFormatting::test_last_n_items",
+          "xarray/tests/test_formatting.py::TestFormatting::test_last_item",
+          "xarray/tests/test_formatting.py::TestFormatting::test_format_item",
+          "xarray/tests/test_formatting.py::TestFormatting::test_format_items",
+          "xarray/tests/test_formatting.py::TestFormatting::test_format_array_flat",
+          "xarray/tests/test_formatting.py::TestFormatting::test_pretty_print",
+          "xarray/tests/test_formatting.py::TestFormatting::test_maybe_truncate",
+          "xarray/tests/test_formatting.py::TestFormatting::test_format_timestamp_out_of_bounds",
+          "xarray/tests/test_formatting.py::TestFormatting::test_attribute_repr",
+          "xarray/tests/test_formatting.py::TestFormatting::test_diff_array_repr",
+          "xarray/tests/test_formatting.py::TestFormatting::test_diff_attrs_repr_with_array",
+          "xarray/tests/test_formatting.py::TestFormatting::test_diff_dataset_repr",
+          "xarray/tests/test_formatting.py::TestFormatting::test_array_repr",
+          "xarray/tests/test_formatting.py::test_set_numpy_options",
+          "xarray/tests/test_formatting.py::test_short_numpy_repr",
+          "xarray/tests/test_formatting.py::test_large_array_repr_length"
+        ]
+      }
+    },
+    {
+      "source": "swebench",
+      "instance_id": "scikit-learn__scikit-learn-25500",
+      "language": "python",
+      "repository": "scikit-learn/scikit-learn",
+      "problem_statement": "CalibratedClassifierCV doesn't work with `set_config(transform_output=\"pandas\")`\n### Describe the bug\r\n\r\nCalibratedClassifierCV with isotonic regression doesn't work when we previously set `set_config(transform_output=\"pandas\")`.\r\nThe IsotonicRegression seems to return a dataframe, which is a problem for `_CalibratedClassifier`  in `predict_proba` where it tries to put the dataframe in a numpy array row `proba[:, class_idx] = calibrator.predict(this_pred)`.\r\n\r\n### Steps/Code to Reproduce\r\n\r\n```python\r\nimport numpy as np\r\nfrom sklearn import set_config\r\nfrom sklearn.calibration import CalibratedClassifierCV\r\nfrom sklearn.linear_model import SGDClassifier\r\n\r\nset_config(transform_output=\"pandas\")\r\nmodel = CalibratedClassifierCV(SGDClassifier(), method='isotonic')\r\nmodel.fit(np.arange(90).reshape(30, -1), np.arange(30) % 2)\r\nmodel.predict(np.arange(90).reshape(30, -1))\r\n```\r\n\r\n### Expected Results\r\n\r\nIt should not crash.\r\n\r\n### Actual Results\r\n\r\n```\r\n../core/model_trainer.py:306: in train_model\r\n    cv_predictions = cross_val_predict(pipeline,\r\n../../../../.anaconda3/envs/strategy-training/lib/python3.9/site-packages/sklearn/model_selection/_validation.py:968: in cross_val_predict\r\n    predictions = parallel(\r\n../../../../.anaconda3/envs/strategy-training/lib/python3.9/site-packages/joblib/parallel.py:1085: in __call__\r\n    if self.dispatch_one_batch(iterator):\r\n../../../../.anaconda3/envs/strategy-training/lib/python3.9/site-packages/joblib/parallel.py:901: in dispatch_one_batch\r\n    self._dispatch(tasks)\r\n../../../../.anaconda3/envs/strategy-training/lib/python3.9/site-packages/joblib/parallel.py:819: in _dispatch\r\n    job = self._backend.apply_async(batch, callback=cb)\r\n../../../../.anaconda3/envs/strategy-training/lib/python3.9/site-packages/joblib/_parallel_backends.py:208: in apply_async\r\n    result = ImmediateResult(func)\r\n../../../../.anaconda3/envs/strategy-training/lib/python3.9/site-packages/joblib/_parallel_backends.py:597: in __init__\r\n    self.results = batch()\r\n../../../../.anaconda3/envs/strategy-training/lib/python3.9/site-packages/joblib/parallel.py:288: in __call__\r\n    return [func(*args, **kwargs)\r\n../../../../.anaconda3/envs/strategy-training/lib/python3.9/site-packages/joblib/parallel.py:288: in <listcomp>\r\n    return [func(*args, **kwargs)\r\n../../../../.anaconda3/envs/strategy-training/lib/python3.9/site-packages/sklearn/utils/fixes.py:117: in __call__\r\n    return self.function(*args, **kwargs)\r\n../../../../.anaconda3/envs/strategy-training/lib/python3.9/site-packages/sklearn/model_selection/_validation.py:1052: in _fit_and_predict\r\n    predictions = func(X_test)\r\n../../../../.anaconda3/envs/strategy-training/lib/python3.9/site-packages/sklearn/pipeline.py:548: in predict_proba\r\n    return self.steps[-1][1].predict_proba(Xt, **predict_proba_params)\r\n../../../../.anaconda3/envs/strategy-training/lib/python3.9/site-packages/sklearn/calibration.py:477: in predict_proba\r\n    proba = calibrated_classifier.predict_proba(X)\r\n../../../../.anaconda3/envs/strategy-training/lib/python3.9/site-packages/sklearn/calibration.py:764: in predict_proba\r\n    proba[:, class_idx] = calibrator.predict(this_pred)\r\nE   ValueError: could not broadcast input array from shape (20,1) into shape (20,)\r\n```\r\n\r\n### Versions\r\n\r\n```shell\r\nSystem:\r\n    python: 3.9.15 (main, Nov 24 2022, 14:31:59)  [GCC 11.2.0]\r\nexecutable: /home/philippe/.anaconda3/envs/strategy-training/bin/python\r\n   machine: Linux-5.15.0-57-generic-x86_64-with-glibc2.31\r\n\r\nPython dependencies:\r\n      sklearn: 1.2.0\r\n          pip: 22.2.2\r\n   setuptools: 62.3.2\r\n        numpy: 1.23.5\r\n        scipy: 1.9.3\r\n       Cython: None\r\n       pandas: 1.4.1\r\n   matplotlib: 3.6.3\r\n       joblib: 1.2.0\r\nthreadpoolctl: 3.1.0\r\n\r\nBuilt with OpenMP: True\r\n\r\nthreadpoolctl info:\r\n       user_api: openmp\r\n   internal_api: openmp\r\n         prefix: libgomp\r\n       filepath: /home/philippe/.anaconda3/envs/strategy-training/lib/python3.9/site-packages/scikit_learn.libs/libgomp-a34b3233.so.1.0.0\r\n        version: None\r\n    num_threads: 12\r\n\r\n       user_api: blas\r\n   internal_api: openblas\r\n         prefix: libopenblas\r\n       filepath: /home/philippe/.anaconda3/envs/strategy-training/lib/python3.9/site-packages/numpy.libs/libopenblas64_p-r0-742d56dc.3.20.so\r\n        version: 0.3.20\r\nthreading_layer: pthreads\r\n   architecture: Haswell\r\n    num_threads: 12\r\n\r\n       user_api: blas\r\n   internal_api: openblas\r\n         prefix: libopenblas\r\n       filepath: /home/philippe/.anaconda3/envs/strategy-training/lib/python3.9/site-packages/scipy.libs/libopenblasp-r0-41284840.3.18.so\r\n        version: 0.3.18\r\nthreading_layer: pthreads\r\n   architecture: Haswell\r\n    num_threads: 12\r\n```",
+      "issue_url": null,
+      "category": "concurrency",
+      "difficulty": "medium",
+      "workspace": {
+        "strategy": "git_base_commit",
+        "repository": "scikit-learn/scikit-learn",
+        "base_commit": "4db04923a754b6a2defa1b172f55d492b85d165e",
+        "version": "1.3"
+      },
+      "grading": {
+        "framework": "swebench",
+        "dataset": "SWE-bench/SWE-bench_Lite",
+        "instance_id": "scikit-learn__scikit-learn-25500",
+        "fail_to_pass": [
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression_output_predict"
+        ],
+        "pass_to_pass": [
+          "sklearn/tests/test_isotonic.py::test_permutation_invariance",
+          "sklearn/tests/test_isotonic.py::test_check_increasing_small_number_of_samples",
+          "sklearn/tests/test_isotonic.py::test_check_increasing_up",
+          "sklearn/tests/test_isotonic.py::test_check_increasing_up_extreme",
+          "sklearn/tests/test_isotonic.py::test_check_increasing_down",
+          "sklearn/tests/test_isotonic.py::test_check_increasing_down_extreme",
+          "sklearn/tests/test_isotonic.py::test_check_ci_warn",
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression",
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression_ties_min",
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression_ties_max",
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression_ties_secondary_",
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression_with_ties_in_differently_sized_groups",
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression_reversed",
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression_auto_decreasing",
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression_auto_increasing",
+          "sklearn/tests/test_isotonic.py::test_assert_raises_exceptions",
+          "sklearn/tests/test_isotonic.py::test_isotonic_sample_weight_parameter_default_value",
+          "sklearn/tests/test_isotonic.py::test_isotonic_min_max_boundaries",
+          "sklearn/tests/test_isotonic.py::test_isotonic_sample_weight",
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression_oob_raise",
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression_oob_clip",
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression_oob_nan",
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression_pickle",
+          "sklearn/tests/test_isotonic.py::test_isotonic_duplicate_min_entry",
+          "sklearn/tests/test_isotonic.py::test_isotonic_ymin_ymax",
+          "sklearn/tests/test_isotonic.py::test_isotonic_zero_weight_loop",
+          "sklearn/tests/test_isotonic.py::test_fast_predict",
+          "sklearn/tests/test_isotonic.py::test_isotonic_copy_before_fit",
+          "sklearn/tests/test_isotonic.py::test_isotonic_dtype",
+          "sklearn/tests/test_isotonic.py::test_isotonic_mismatched_dtype[int32]",
+          "sklearn/tests/test_isotonic.py::test_isotonic_mismatched_dtype[int64]",
+          "sklearn/tests/test_isotonic.py::test_isotonic_mismatched_dtype[float32]",
+          "sklearn/tests/test_isotonic.py::test_isotonic_mismatched_dtype[float64]",
+          "sklearn/tests/test_isotonic.py::test_make_unique_dtype",
+          "sklearn/tests/test_isotonic.py::test_make_unique_tolerance[float64]",
+          "sklearn/tests/test_isotonic.py::test_make_unique_tolerance[float32]",
+          "sklearn/tests/test_isotonic.py::test_isotonic_make_unique_tolerance",
+          "sklearn/tests/test_isotonic.py::test_isotonic_non_regression_inf_slope",
+          "sklearn/tests/test_isotonic.py::test_isotonic_thresholds[True]",
+          "sklearn/tests/test_isotonic.py::test_isotonic_thresholds[False]",
+          "sklearn/tests/test_isotonic.py::test_input_shape_validation",
+          "sklearn/tests/test_isotonic.py::test_isotonic_2darray_more_than_1_feature",
+          "sklearn/tests/test_isotonic.py::test_isotonic_regression_sample_weight_not_overwritten",
+          "sklearn/tests/test_isotonic.py::test_get_feature_names_out[1d]",
+          "sklearn/tests/test_isotonic.py::test_get_feature_names_out[2d]"
+        ]
+      }
+    },
+    {
+      "source": "swebench",
+      "instance_id": "pytest-dev__pytest-5103",
+      "language": "python",
+      "repository": "pytest-dev/pytest",
+      "problem_statement": "Unroll the iterable for all/any calls to get better reports\nSometime I need to assert some predicate on all of an iterable, and for that the builtin functions `all`/`any` are great - but the failure messages aren't useful at all!\r\nFor example - the same test written in three ways:\r\n\r\n- A generator expression\r\n```sh                                                                                                                                                                                                                         \r\n    def test_all_even():\r\n        even_stevens = list(range(1,100,2))\r\n>       assert all(is_even(number) for number in even_stevens)\r\nE       assert False\r\nE        +  where False = all(<generator object test_all_even.<locals>.<genexpr> at 0x101f82ed0>)\r\n```\r\n- A list comprehension\r\n```sh\r\n    def test_all_even():\r\n        even_stevens = list(range(1,100,2))\r\n>       assert all([is_even(number) for number in even_stevens])\r\nE       assert False\r\nE        +  where False = all([False, False, False, False, False, False, ...])\r\n```\r\n- A for loop\r\n```sh\r\n    def test_all_even():\r\n        even_stevens = list(range(1,100,2))\r\n        for number in even_stevens:\r\n>           assert is_even(number)\r\nE           assert False\r\nE            +  where False = is_even(1)\r\n\r\ntest_all_any.py:7: AssertionError\r\n```\r\nThe only one that gives a meaningful report is the for loop - but it's way more wordy, and `all` asserts don't translate to a for loop nicely (I'll have to write a `break` or a helper function - yuck)\r\nI propose the assertion re-writer \"unrolls\" the iterator to the third form, and then uses the already existing reports.\r\n\r\n- [x] Include a detailed description of the bug or suggestion\r\n- [x] `pip list` of the virtual environment you are using\r\n```\r\nPackage        Version\r\n-------------- -------\r\natomicwrites   1.3.0  \r\nattrs          19.1.0 \r\nmore-itertools 7.0.0  \r\npip            19.0.3 \r\npluggy         0.9.0  \r\npy             1.8.0  \r\npytest         4.4.0  \r\nsetuptools     40.8.0 \r\nsix            1.12.0 \r\n```\r\n- [x] pytest and operating system versions\r\n`platform darwin -- Python 3.7.3, pytest-4.4.0, py-1.8.0, pluggy-0.9.0`\r\n- [x] Minimal example if possible",
+      "issue_url": null,
+      "category": "dependency_import",
+      "difficulty": "medium",
+      "workspace": {
+        "strategy": "git_base_commit",
+        "repository": "pytest-dev/pytest",
+        "base_commit": "10ca84ffc56c2dd2d9dc4bd71b7b898e083500cd",
+        "version": "4.5"
+      },
+      "grading": {
+        "framework": "swebench",
+        "dataset": "SWE-bench/SWE-bench_Lite",
+        "instance_id": "pytest-dev__pytest-5103",
+        "fail_to_pass": [
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_unroll_expression"
+        ],
+        "pass_to_pass": [
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_place_initial_imports",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_dont_rewrite",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_name",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_dont_rewrite_if_hasattr_fails",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_assert_already_has_message",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_boolop",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_short_circuit_evaluation",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_unary_op",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_binary_op",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_boolop_percent",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_call",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_attribute",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_comparisons",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_len",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_custom_reprcompare",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_assert_raising_nonzero_in_comparison",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_formatchar",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_custom_repr",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_custom_repr_non_ascii",
+          "testing/test_assertrewrite.py::TestAssertionRewriteHookDetails::test_read_pyc",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_dont_rewrite_plugin",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_assertion_message",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_assertion_message_multiline",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_assertion_message_tuple",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_assertion_message_expr",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_assertion_message_escape",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_assertion_messages_bytes",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_at_operator_issue1290",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_starred_with_side_effect",
+          "testing/test_assertrewrite.py::TestAssertionRewrite::test_for_loop",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_pycache_is_a_file",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_pycache_is_readonly",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_zipfile",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_readonly",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_dont_write_bytecode",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_orphaned_pyc_file",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_pyc_vs_pyo",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_package",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_translate_newlines",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_package_without__init__py",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_rewrite_warning",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_rewrite_module_imported_from_conftest",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_remember_rewritten_modules",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_rewrite_warning_using_pytest_plugins",
+          "testing/test_assertrewrite.py::TestRewriteOnImport::test_rewrite_warning_using_pytest_plugins_env_var",
+          "testing/test_assertrewrite.py::TestAssertionRewriteHookDetails::test_loader_is_package_false_for_module",
+          "testing/test_assertrewrite.py::TestAssertionRewriteHookDetails::test_loader_is_package_true_for_package",
+          "testing/test_assertrewrite.py::TestAssertionRewriteHookDetails::test_sys_meta_path_munged",
+          "testing/test_assertrewrite.py::TestAssertionRewriteHookDetails::test_write_pyc",
+          "testing/test_assertrewrite.py::TestAssertionRewriteHookDetails::test_resources_provider_for_loader",
+          "testing/test_assertrewrite.py::TestAssertionRewriteHookDetails::test_reload_is_same",
+          "testing/test_assertrewrite.py::TestAssertionRewriteHookDetails::test_reload_reloads",
+          "testing/test_assertrewrite.py::TestAssertionRewriteHookDetails::test_get_data_support",
+          "testing/test_assertrewrite.py::test_issue731",
+          "testing/test_assertrewrite.py::TestIssue925::test_simple_case",
+          "testing/test_assertrewrite.py::TestIssue925::test_long_case",
+          "testing/test_assertrewrite.py::TestIssue925::test_many_brackets",
+          "testing/test_assertrewrite.py::TestIssue2121::test_rewrite_python_files_contain_subdirs",
+          "testing/test_assertrewrite.py::test_source_mtime_long_long[-1]",
+          "testing/test_assertrewrite.py::test_source_mtime_long_long[1]",
+          "testing/test_assertrewrite.py::test_rewrite_infinite_recursion",
+          "testing/test_assertrewrite.py::TestEarlyRewriteBailout::test_basic",
+          "testing/test_assertrewrite.py::TestEarlyRewriteBailout::test_pattern_contains_subdirectories",
+          "testing/test_assertrewrite.py::TestEarlyRewriteBailout::test_cwd_changed"
+        ]
+      }
+    },
+    {
+      "source": "swebench",
+      "instance_id": "matplotlib__matplotlib-23913",
+      "language": "python",
+      "repository": "matplotlib/matplotlib",
+      "problem_statement": "legend draggable as keyword\n<!--To help us understand and resolve your issue, please fill out the form to the best of your ability.-->\r\n<!--You can feel free to delete the sections that do not apply.-->\r\n\r\n### Feature request\r\n\r\n**There is not keyword to make legend draggable at creation**\r\n\r\n<!--A short 1-2 sentences that succinctly describes the bug-->\r\n\r\nIs there a code reason why one can not add a \"draggable=True\" keyword to the __init__ function for Legend?  This would be more handy than having to call it after legend creation.  And, naively, it would seem simple to do.  But maybe there is a reason why it would not work?",
+      "issue_url": null,
+      "category": "state_cache",
+      "difficulty": "easy",
+      "workspace": {
+        "strategy": "git_base_commit",
+        "repository": "matplotlib/matplotlib",
+        "base_commit": "5c4595267ccd3daf78f5fd05693b7ecbcd575c1e",
+        "version": "3.6"
+      },
+      "grading": {
+        "framework": "swebench",
+        "dataset": "SWE-bench/SWE-bench_Lite",
+        "instance_id": "matplotlib__matplotlib-23913",
+        "fail_to_pass": [
+          "lib/matplotlib/tests/test_legend.py::test_legend_draggable[True]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_draggable[False]"
+        ],
+        "pass_to_pass": [
+          "lib/matplotlib/tests/test_legend.py::test_legend_ordereddict",
+          "lib/matplotlib/tests/test_legend.py::test_legend_auto1[png]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_auto1[pdf]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_auto2[png]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_auto2[pdf]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_auto3[png]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_auto3[pdf]",
+          "lib/matplotlib/tests/test_legend.py::test_various_labels[png]",
+          "lib/matplotlib/tests/test_legend.py::test_various_labels[pdf]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_label_with_leading_underscore",
+          "lib/matplotlib/tests/test_legend.py::test_labels_first[png]",
+          "lib/matplotlib/tests/test_legend.py::test_multiple_keys[png]",
+          "lib/matplotlib/tests/test_legend.py::test_alpha_rgba[png]",
+          "lib/matplotlib/tests/test_legend.py::test_alpha_rcparam[png]",
+          "lib/matplotlib/tests/test_legend.py::test_fancy[png]",
+          "lib/matplotlib/tests/test_legend.py::test_fancy[pdf]",
+          "lib/matplotlib/tests/test_legend.py::test_framealpha[png]",
+          "lib/matplotlib/tests/test_legend.py::test_framealpha[pdf]",
+          "lib/matplotlib/tests/test_legend.py::test_rc[png]",
+          "lib/matplotlib/tests/test_legend.py::test_rc[pdf]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_expand[png]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_expand[pdf]",
+          "lib/matplotlib/tests/test_legend.py::test_hatching[png]",
+          "lib/matplotlib/tests/test_legend.py::test_hatching[pdf]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_remove",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFunction::test_legend_no_args",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFunction::test_legend_positional_handles_labels",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFunction::test_legend_positional_handles_only",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFunction::test_legend_positional_labels_only",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFunction::test_legend_three_args",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFunction::test_legend_handler_map",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFunction::test_legend_kwargs_handles_only",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFunction::test_legend_kwargs_labels_only",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFunction::test_legend_kwargs_handles_labels",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFunction::test_warn_mixed_args_and_kwargs",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFunction::test_parasite",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFigureFunction::test_legend_handle_label",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFigureFunction::test_legend_no_args",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFigureFunction::test_legend_label_arg",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFigureFunction::test_legend_label_three_args",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFigureFunction::test_legend_label_three_args_pluskw",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFigureFunction::test_legend_kw_args",
+          "lib/matplotlib/tests/test_legend.py::TestLegendFigureFunction::test_warn_args_kwargs",
+          "lib/matplotlib/tests/test_legend.py::test_legend_stackplot[png]",
+          "lib/matplotlib/tests/test_legend.py::test_cross_figure_patch_legend",
+          "lib/matplotlib/tests/test_legend.py::test_nanscatter",
+          "lib/matplotlib/tests/test_legend.py::test_legend_repeatcheckok",
+          "lib/matplotlib/tests/test_legend.py::test_not_covering_scatter[png]",
+          "lib/matplotlib/tests/test_legend.py::test_not_covering_scatter_transform[png]",
+          "lib/matplotlib/tests/test_legend.py::test_linecollection_scaled_dashes",
+          "lib/matplotlib/tests/test_legend.py::test_handler_numpoints",
+          "lib/matplotlib/tests/test_legend.py::test_text_nohandler_warning",
+          "lib/matplotlib/tests/test_legend.py::test_empty_bar_chart_with_legend",
+          "lib/matplotlib/tests/test_legend.py::test_shadow_framealpha",
+          "lib/matplotlib/tests/test_legend.py::test_legend_title_empty",
+          "lib/matplotlib/tests/test_legend.py::test_legend_proper_window_extent",
+          "lib/matplotlib/tests/test_legend.py::test_window_extent_cached_renderer",
+          "lib/matplotlib/tests/test_legend.py::test_legend_title_fontprop_fontsize",
+          "lib/matplotlib/tests/test_legend.py::test_legend_alignment[center]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_alignment[left]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_alignment[right]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_set_alignment[center]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_set_alignment[left]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_set_alignment[right]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_single[red]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_single[none]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_single[color2]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_list",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_linecolor",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_markeredgecolor",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_markerfacecolor",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_rcparam_single[red]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_rcparam_single[none]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_rcparam_single[color2]",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_rcparam_linecolor",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_rcparam_markeredgecolor",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_rcparam_markeredgecolor_short",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_rcparam_markerfacecolor",
+          "lib/matplotlib/tests/test_legend.py::test_legend_labelcolor_rcparam_markerfacecolor_short",
+          "lib/matplotlib/tests/test_legend.py::test_get_set_draggable",
+          "lib/matplotlib/tests/test_legend.py::test_alpha_handles",
+          "lib/matplotlib/tests/test_legend.py::test_warn_big_data_best_loc",
+          "lib/matplotlib/tests/test_legend.py::test_no_warn_big_data_when_loc_specified",
+          "lib/matplotlib/tests/test_legend.py::test_plot_multiple_input_multiple_label[label_array0]",
+          "lib/matplotlib/tests/test_legend.py::test_plot_multiple_input_multiple_label[label_array1]",
+          "lib/matplotlib/tests/test_legend.py::test_plot_multiple_input_multiple_label[label_array2]",
+          "lib/matplotlib/tests/test_legend.py::test_plot_multiple_input_single_label[one]",
+          "lib/matplotlib/tests/test_legend.py::test_plot_multiple_input_single_label[1]",
+          "lib/matplotlib/tests/test_legend.py::test_plot_multiple_input_single_label[int]",
+          "lib/matplotlib/tests/test_legend.py::test_plot_single_input_multiple_label[label_array0]",
+          "lib/matplotlib/tests/test_legend.py::test_plot_single_input_multiple_label[label_array1]",
+          "lib/matplotlib/tests/test_legend.py::test_plot_single_input_multiple_label[label_array2]",
+          "lib/matplotlib/tests/test_legend.py::test_plot_multiple_label_incorrect_length_exception",
+          "lib/matplotlib/tests/test_legend.py::test_legend_face_edgecolor",
+          "lib/matplotlib/tests/test_legend.py::test_legend_text_axes",
+          "lib/matplotlib/tests/test_legend.py::test_handlerline2d",
+          "lib/matplotlib/tests/test_legend.py::test_subfigure_legend",
+          "lib/matplotlib/tests/test_legend.py::test_setting_alpha_keeps_polycollection_color",
+          "lib/matplotlib/tests/test_legend.py::test_legend_markers_from_line2d",
+          "lib/matplotlib/tests/test_legend.py::test_ncol_ncols[png]",
+          "lib/matplotlib/tests/test_legend.py::test_ncol_ncols[pdf]"
+        ]
+      }
+    }
+  ]
+}

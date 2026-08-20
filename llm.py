@@ -30,7 +30,19 @@ class LLMClient:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.timeout = timeout
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY") or ""
+        # LITELLM_MASTER_KEY takes priority: when base_url points at a
+        # litellm gateway (see create_local_llm_client()), that's the
+        # credential the gateway itself checks -- it's a single shared
+        # secret for every model behind the gateway, including local
+        # Ollama ones that need no OpenAI key at all. OPENAI_API_KEY stays
+        # supported for calling api.openai.com directly, without a gateway
+        # in front (e.g. the web UI's explicit "OpenAI" provider choice).
+        self.api_key = (
+            api_key
+            or os.environ.get("LITELLM_MASTER_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or ""
+        )
 
     def chat(
         self,
@@ -165,24 +177,38 @@ class LLMClient:
 def create_local_llm_client(
     provider: str = "openai_compatible",
     base_url: Optional[str] = None,
-    model: str = "qwen2.5-coder:7b",
+    model: Optional[str] = None,
 ) -> LLMClient:
     """
+    base_url/model resolve from $LLM_BASE_URL/$LLM_MODEL when not given
+    explicitly, so a litellm gateway (or any other OpenAI-compatible
+    endpoint) can be configured once in .env and every caller -- CLI flags
+    left at their defaults, the web UI's non-explicit paths -- picks it up
+    automatically instead of needing --base-url/--model passed every time.
+    Falls back to the pre-gateway defaults (a bare local inference server on
+    :8000, or Ollama directly on :11434) when neither the argument nor the
+    env var is set, so this still works with zero configuration.
 
-    If you are using your ai-inference-engine and it exposes OpenAI-compatible API:
-        provider="openai_compatible"
-        base_url="http://localhost:8000"
+    Auth: LLMClient reads $LITELLM_MASTER_KEY first, then $OPENAI_API_KEY
+    (see LLMClient.__init__) -- nothing to pass here either, as long as
+    .env has the right one set for whichever endpoint base_url points at.
 
-    If you are using Ollama directly:
-        provider="ollama"
-        base_url="http://localhost:11434"
+    Examples:
+        # litellm gateway proxying Ollama + OpenAI behind one endpoint --
+        # set once in .env: LLM_BASE_URL=http://localhost:4000/v1,
+        # LLM_MODEL=local-coder, LITELLM_MASTER_KEY=...
+        create_local_llm_client()
+
+        # Direct to Ollama, no gateway
+        create_local_llm_client(provider="ollama", base_url="http://localhost:11434")
     """
-
     if base_url is None:
-        if provider == "ollama":
-            base_url = "http://localhost:11434"
-        else:
-            base_url = "http://localhost:8000"
+        base_url = os.environ.get("LLM_BASE_URL")
+    if base_url is None:
+        base_url = "http://localhost:11434" if provider == "ollama" else "http://localhost:8000"
+
+    if model is None:
+        model = os.environ.get("LLM_MODEL") or "qwen2.5-coder:7b"
 
     return LLMClient(
         base_url=base_url,

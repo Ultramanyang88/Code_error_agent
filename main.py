@@ -232,7 +232,18 @@ def run_agent(
             if step_callback:
                 step_callback("step_done", entry)
 
-        if state.test_results and get_validation_status(state) != ValidationStatus.PASSED:
+        # test_results only ever grows (see state.py's test_count_at_last_replan_check
+        # docstring) -- gate on a FRESH validation attempt having happened
+        # since the last time we checked, not just "the latest known result
+        # isn't PASSED". Without this, every loop after the first failure
+        # re-triggers a replan regardless of what the current step actually
+        # was, burning the replan budget before a just-appended recovery
+        # plan gets a real chance to run.
+        has_fresh_test_result = len(state.test_results) > state.test_count_at_last_replan_check
+        if has_fresh_test_result:
+            state.test_count_at_last_replan_check = len(state.test_results)
+
+        if has_fresh_test_result and get_validation_status(state) != ValidationStatus.PASSED:
             if state.replan_count >= state.budget.max_replans:
                 print("[!] Replan limit reached. Abandoning.")
                 state.run_status = RunStatus.FAILED

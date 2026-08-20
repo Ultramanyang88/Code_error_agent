@@ -297,8 +297,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--llm", action="store_true", help="Use LLM client")
     p.add_argument("--provider", default="openai_compatible",
                    choices=["openai_compatible", "ollama"])
+    # None (not a hardcoded string) so create_local_llm_client() falls
+    # through to $LLM_BASE_URL/$LLM_MODEL when these flags aren't given --
+    # see llm.py. Pass either flag explicitly to override .env for one run.
     p.add_argument("--base-url", default=None)
-    p.add_argument("--model", default="qwen2.5-coder:7b")
+    p.add_argument("--model", default=None)
     p.add_argument("--judge", action="store_true",
                    help="Run LLM-as-judge on each result (requires OPENAI_API_KEY)")
     p.add_argument("--task", default=None,
@@ -321,7 +324,11 @@ def main() -> None:
             base_url=args.base_url,
             model=args.model,
         )
-        print(f"[*] LLM mode: {args.model}")
+        # client.model, not args.model -- args.model is often None here
+        # (resolved from $LLM_MODEL inside create_local_llm_client when
+        # --model isn't given), and printing that None would be actively
+        # misleading about what this run is actually about to call.
+        print(f"[*] LLM mode: {client.model} @ {client.base_url}")
     else:
         print("[*] Fallback mode (no LLM)")
 
