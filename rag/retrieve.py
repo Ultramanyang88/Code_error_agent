@@ -5,8 +5,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import math
 import re
 
-import numpy as np
-
 from .model_cache import get_shared_cross_encoder, get_shared_embedder
 from .embedder import CodeEmbedder
 from .indexer import RepoIndexer, CodeChunk

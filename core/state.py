@@ -137,6 +137,17 @@ class AgentState:
     validation_status: ValidationStatus = ValidationStatus.NOT_RUN
     replan_count: int = 0
     tool_call_count: int = 0
+    # len(test_results) as of the last time the main loop checked whether to
+    # replan. test_results only ever grows (never cleared), so "the latest
+    # result isn't PASSED" stays true for every loop after the first failure
+    # regardless of whether that loop's step ran a test at all -- without
+    # this, the replan check in main.py fires on every single iteration
+    # once any test has ever failed, burning the replan budget on stale
+    # signal before a newly appended recovery plan gets a real chance to
+    # execute. Only replan again once len(test_results) has actually grown
+    # past this value, i.e. a fresh validation attempt happened and it's
+    # still not passing.
+    test_count_at_last_replan_check: int = 0
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
     stop_reason: Optional[str] = None
@@ -248,6 +259,19 @@ class AgentState:
                     lines.append(f"   Suggested tools: {step.suggested_tools}")
                 if step.planner_notes:
                     lines.append(f"   Planner notes: {step.planner_notes}")
+
+            # A completed step's result was previously dropped entirely from
+            # this summary -- only failed steps' errors were shown. Since
+            # this feeds the replan prompt (see Planner._build_replan_prompt),
+            # that meant re-planning had no visibility into what earlier
+            # steps actually found/accomplished, only pass/fail status, and
+            # could easily re-request work that had already been done.
+            if step.status == StepStatus.COMPLETED and step.result:
+                if verbose or len(step.result) <= 160:
+                    preview = step.result
+                else:
+                    preview = step.result[:160] + "...[truncated]"
+                lines.append(f"   Result: {preview}")
 
             if step.error:
                 lines.append(f"   Error: {step.error}")

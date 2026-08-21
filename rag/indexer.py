@@ -6,9 +6,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import ast
 import hashlib
 import json
-import os
-
-import numpy as np
 
 try:
     import faiss

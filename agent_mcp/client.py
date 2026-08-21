@@ -165,18 +165,12 @@ class MCPToolClient:
 
 
 # ── process-wide connection cache ────────────────────────────────────────────
-#
-# Without this, every caller that wants an MCP tool map (every run_agent()
-# call — i.e. every chat turn) would build its own MCPToolClient and pay a
-# fresh subprocess spawn + MCP handshake. get_shared_mcp_client() hands back
-# one persistent, already-connected client per (command, args, namespace, cwd),
-# shared across the whole process.
-#
-# cwd is part of the cache key (not just an arg) on purpose: a filesystem-style
-# MCP server resolves its "." argument against the subprocess's own working
-# directory, and each session/repo needs its own subprocess pointed at its own
-# repo_root — sharing one cached client across two different repos would let
-# one session's mcp_fs__* tools silently read/write the wrong tree.
+# Without this, every run_agent() call would build its own MCPToolClient and
+# pay a fresh subprocess spawn + MCP handshake. get_shared_mcp_client() hands
+# back one persistent client per (command, args, namespace, cwd), shared
+# across the process. cwd is part of the cache key because a filesystem-style
+# server resolves "." against its own subprocess cwd -- without it, two
+# sessions on different repos could share a client and read/write the wrong tree.
 
 _shared_clients: Dict[Tuple[str, Tuple[str, ...], str, Optional[str]], MCPToolClient] = {}
 _shared_clients_lock = threading.Lock()

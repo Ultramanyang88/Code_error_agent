@@ -1,0 +1,30 @@
+name: Tests
+
+# testcase/test_all.py is deliberately self-contained -- no Postgres/Redis/
+# Docker/API-key required (see its docstring and db/cache.py's
+# TestCacheUnconfigured-style pattern for the live-service test files that
+# are NOT run here). That's what makes it safe to run on every push/PR with
+# zero secrets or service containers to configure.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run test suite
+        run: python -m pytest testcase/test_all.py -v

@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# Starts the whole local dev stack: Postgres + Redis (docker compose), the
-# sandbox image (if missing), an RQ worker, and the API server -- then opens
-# the chat UI in your browser.
+# Starts the local dev stack: Postgres + Redis, the sandbox image (if
+# missing), an RQ worker, and the API server -- then opens the chat UI.
 #
-# Usage:
-#   ./scripts/dev-up.sh              # full stack: PG + Redis + sandbox + RQ
-#   ./scripts/dev-up.sh --no-queue   # skip the RQ worker (runs jobs in-process instead)
-#   ./scripts/dev-up.sh --no-sandbox # skip building/using the sandbox image
+#   ./scripts/dev-up.sh              # full stack
+#   ./scripts/dev-up.sh --no-queue   # skip the RQ worker, run jobs in-process
+#   ./scripts/dev-up.sh --no-sandbox # skip the sandbox image
 #
-# Ctrl+C stops the server + worker (docker compose is left running -- run
-# `docker compose down` yourself when you're done with it for the session).
+# Ctrl+C stops the server + worker; `docker compose down` separately when
+# you're done with Postgres/Redis for the session.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

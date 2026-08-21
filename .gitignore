@@ -80,6 +80,8 @@ coverage.xml
 
 testcase/results/
 testcase/baseline.json
+testcase/eval_sets/cache/
+testcase/eval_sets/workspaces/
 
 # ---------------------------------------------------------------------------
 # Model, embedding, and data caches

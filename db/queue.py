@@ -1,27 +1,15 @@
-from __future__ import annotations
-
 """
-RQ (Redis Queue) wrapper for running agent jobs out-of-process.
-
-Without this, every /api/run or /api/session/{id}/message spawns a raw
-threading.Thread with no concurrency cap, no retry, and no persistence: if
-the FastAPI process restarts mid-run, the run is just gone. With it, jobs go
-through a Redis-backed queue consumed by one or more `rq worker` processes
-(started separately -- see the module-level docstring below for the
-command), which gives you:
-  - a real concurrency cap (N worker processes = N concurrent agent runs,
-    not "as many as happen to be requested at once")
-  - jobs survive an API-process restart (they're sitting in Redis, not a
-    thread that dies with the process)
-  - retry support (not wired up yet, but the queue is there for it)
-
-Optional and opt-in via $AGENT_QUEUE_ENABLED, same pattern as sandboxing --
-api/server.py falls back to the original threading.Thread dispatch when
-this is off or Redis isn't reachable, so nothing breaks with zero setup.
+RQ (Redis Queue) wrapper for running agent jobs out-of-process, instead of
+the unbounded threading.Thread-per-request dispatch: gives a real
+concurrency cap (N workers = N concurrent runs) and jobs survive an
+API-process restart. Opt-in via $AGENT_QUEUE_ENABLED; api/server.py falls
+back to threading.Thread when it's off or Redis isn't reachable.
 
 Run a worker (separate process, same codebase/venv):
     AGENT_QUEUE_ENABLED=1 REDIS_URL=redis://localhost:6379/0 rq worker agent-runs
 """
+
+from __future__ import annotations
 
 import os
 from typing import Any, Optional

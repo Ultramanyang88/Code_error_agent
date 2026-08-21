@@ -382,6 +382,31 @@ class TestWriteAndReplaceFile(unittest.TestCase):
         r = replace_in_file(self.state, path="ghost.py", old_text="x", new_text="y")
         self.assertFalse(r.success)
 
+    def test_replace_empty_old_text_rejected(self):
+        """
+        Regression test: "" is a substring of every string in Python, so
+        `old_text not in content` was always False for an empty old_text --
+        it sailed past the "not found" check, and content.replace("", "", 1)
+        is a no-op, yet the tool used to report success=True with
+        changed_files set, manufacturing false evidence that a fix was
+        applied. Must be rejected outright, and the file must be untouched.
+        """
+        (self.repo / "code.py").write_text("x = 1\n")
+        r = replace_in_file(self.state, path="code.py", old_text="", new_text="")
+        self.assertFalse(r.success)
+        self.assertEqual((self.repo / "code.py").read_text(), "x = 1\n")
+
+    def test_replace_no_op_when_old_equals_new_is_not_reported_as_success(self):
+        """
+        Regression test: even with a non-empty old_text, if new_text is
+        identical to old_text the replace is a no-op -- the file's content
+        is unchanged and this must not be reported as a successful edit.
+        """
+        (self.repo / "code.py").write_text("x = 1\n")
+        r = replace_in_file(self.state, path="code.py", old_text="x = 1", new_text="x = 1")
+        self.assertFalse(r.success)
+        self.assertEqual((self.repo / "code.py").read_text(), "x = 1\n")
+
 
 class TestRunTestsDiscovery(unittest.TestCase):
     """
@@ -1146,6 +1171,57 @@ class TestAgentEndToEnd(unittest.TestCase):
         # but should not crash and should produce a plan
         self.assertGreater(len(state.plan), 0)
 
+    def test_replan_only_fires_after_a_fresh_test_result(self):
+        """
+        Regression test: main.py's replan trigger used to be `state.test_results
+        and validation != PASSED` -- since test_results only ever grows, that
+        stays true on every loop after the first failure regardless of whether
+        the current step ran a test at all, burning the replan budget on stale
+        signal instead of on genuinely new failures. Verify the invariant that
+        actually matters: you can't get more replans than steps that ran a
+        test at all (replanning on a fresh PASS never happens either, so this
+        is a safe upper bound, not an exact-equality claim).
+        """
+        from main import run_agent
+        repo = make_repo({
+            "calc.py": "def divide(a, b):\n    return a / b\n",
+            "test_calc.py": (
+                "import pytest\n"
+                "from calc import divide\n"
+                "def test_divide_by_zero_raises():\n"
+                "    with pytest.raises(ValueError):\n"
+                "        divide(1, 0)\n"
+            ),
+        })
+        try:
+            replan_events = []
+            step_done_events = []
+
+            def callback(event_type, data):
+                if event_type == "replan":
+                    replan_events.append(data)
+                elif event_type == "step_done":
+                    step_done_events.append(data)
+
+            run_agent(
+                task_description="Fix divide() in calc.py to raise ValueError on b == 0.",
+                repo_root=str(repo),
+                client=None,
+                step_callback=callback,
+            )
+
+            steps_that_ran_a_test = sum(
+                1 for e in step_done_events
+                if any(r["tool"] == "run_tests" for r in e["tool_results"])
+            )
+            self.assertLessEqual(
+                len(replan_events), steps_that_ran_a_test,
+                "replanned more times than any step actually ran a test -- "
+                "the stale-test-result replan trigger regressed",
+            )
+        finally:
+            shutil.rmtree(repo, ignore_errors=True)
+
     def test_trace_path_written(self):
         from main import run_agent
         trace_file = self.repo / "trace.jsonl"
@@ -1870,6 +1946,106 @@ class TestFederatedRetriever(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["source_type"], "repo")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LLM client config resolution (litellm gateway support)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestLLMClientAuthResolution(unittest.TestCase):
+    """
+    LLMClient.api_key resolution order: explicit arg > $LITELLM_MASTER_KEY >
+    $OPENAI_API_KEY. LITELLM_MASTER_KEY wins over OPENAI_API_KEY because
+    when base_url points at a litellm gateway, that's the credential the
+    gateway itself checks -- a single shared secret for every model behind
+    it, including local Ollama ones that need no OpenAI key at all.
+    """
+
+    def setUp(self):
+        self._env_backup = {
+            k: os.environ.pop(k, None) for k in ("LITELLM_MASTER_KEY", "OPENAI_API_KEY")
+        }
+
+    def tearDown(self):
+        for k, v in self._env_backup.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
+
+    def test_explicit_api_key_wins_over_both_env_vars(self):
+        from llm import LLMClient
+        os.environ["LITELLM_MASTER_KEY"] = "litellm-key"
+        os.environ["OPENAI_API_KEY"] = "openai-key"
+        client = LLMClient(api_key="explicit-key")
+        self.assertEqual(client.api_key, "explicit-key")
+
+    def test_litellm_master_key_wins_over_openai_api_key(self):
+        from llm import LLMClient
+        os.environ["LITELLM_MASTER_KEY"] = "litellm-key"
+        os.environ["OPENAI_API_KEY"] = "openai-key"
+        client = LLMClient()
+        self.assertEqual(client.api_key, "litellm-key")
+
+    def test_falls_back_to_openai_api_key_alone(self):
+        from llm import LLMClient
+        os.environ["OPENAI_API_KEY"] = "openai-key"
+        client = LLMClient()
+        self.assertEqual(client.api_key, "openai-key")
+
+    def test_no_key_configured_is_empty_not_an_error(self):
+        from llm import LLMClient
+        client = LLMClient()
+        self.assertEqual(client.api_key, "")
+
+
+class TestCreateLocalLLMClientEnvResolution(unittest.TestCase):
+    """
+    create_local_llm_client()'s base_url/model resolve from $LLM_BASE_URL/
+    $LLM_MODEL when not passed explicitly -- so a litellm gateway can be
+    configured once in .env and CLI flags left at their (now None, not a
+    hardcoded string) defaults pick it up automatically. See
+    testcase/run_eval.py / run_portfolio_eval.py's --base-url/--model.
+    """
+
+    def setUp(self):
+        self._env_backup = {
+            k: os.environ.pop(k, None) for k in ("LLM_BASE_URL", "LLM_MODEL")
+        }
+
+    def tearDown(self):
+        for k, v in self._env_backup.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
+
+    def test_explicit_args_win_over_env(self):
+        from llm import create_local_llm_client
+        os.environ["LLM_BASE_URL"] = "http://localhost:4000/v1"
+        os.environ["LLM_MODEL"] = "local-coder"
+        client = create_local_llm_client(base_url="http://explicit:9000", model="explicit-model")
+        self.assertEqual(client.base_url, "http://explicit:9000")
+        self.assertEqual(client.model, "explicit-model")
+
+    def test_reads_base_url_and_model_from_env_when_not_given(self):
+        from llm import create_local_llm_client
+        os.environ["LLM_BASE_URL"] = "http://localhost:4000/v1"
+        os.environ["LLM_MODEL"] = "local-coder"
+        client = create_local_llm_client()
+        self.assertEqual(client.base_url, "http://localhost:4000")  # trailing /v1 stripped
+        self.assertEqual(client.model, "local-coder")
+
+    def test_falls_back_to_pre_gateway_defaults_with_nothing_configured(self):
+        from llm import create_local_llm_client
+        client = create_local_llm_client()
+        self.assertEqual(client.base_url, "http://localhost:8000")
+        self.assertEqual(client.model, "qwen2.5-coder:7b")
+
+    def test_ollama_provider_default_unaffected_by_missing_llm_base_url(self):
+        from llm import create_local_llm_client
+        client = create_local_llm_client(provider="ollama")
+        self.assertEqual(client.base_url, "http://localhost:11434")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
